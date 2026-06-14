@@ -5,6 +5,8 @@ import {
   ArrowUpRight,
   BriefcaseBusiness,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Clock3,
   ClipboardList,
@@ -187,6 +189,129 @@ const JobHistory = ({ jobs, isAdmin }: { jobs: JobRecord[]; isAdmin: boolean }) 
     )}
   </section>
 );
+
+const ApplicationMeta = ({
+  label,
+  value
+}: {
+  label: string;
+  value?: string | number;
+}) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  return (
+    <div className="application-meta-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+};
+
+const ProfileApplications = ({
+  jobs,
+  isAdmin,
+  onUseJob
+}: {
+  jobs: JobRecord[];
+  isAdmin: boolean;
+  onUseJob: (job: JobRecord) => void;
+}) => {
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(jobs[0]?.id ?? null);
+
+  return (
+    <section className="surface-card full">
+      <div className="panel-heading split-heading">
+        <div>
+          <Database size={19} />
+          <h2>{isAdmin ? "All Application Details" : "My Application Details"}</h2>
+        </div>
+        <StatusBadge>{jobs.length} total</StatusBadge>
+      </div>
+
+      {jobs.length === 0 ? (
+        <p className="muted">No applications saved yet.</p>
+      ) : (
+        <div className="application-list">
+          {jobs.map((job) => {
+            const expanded = expandedJobId === job.id;
+            return (
+              <article className={`application-card${expanded ? " expanded" : ""}`} key={job.id}>
+                <button
+                  className="application-summary"
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedJobId(expanded ? null : job.id)}
+                >
+                  <span className="application-chevron">
+                    {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </span>
+                  <span className="application-title">
+                    <strong>{job.jobTitle}</strong>
+                    <span>
+                      {job.applicationDate} | {job.status}
+                      {job.jobPostingTitle ? ` | ${job.jobPostingTitle}` : ""}
+                    </span>
+                    {isAdmin && job.userEmail && (
+                      <span>{job.userName ?? "Candidate"} | {job.userEmail}</span>
+                    )}
+                  </span>
+                  <JobFitBadge job={job} />
+                </button>
+
+                {!expanded && job.llmRecommendation && (
+                  <p className="application-preview">{job.llmRecommendation}</p>
+                )}
+
+                {expanded && (
+                  <div className="application-details">
+                    <div className="application-meta-grid">
+                      <ApplicationMeta label="Posting" value={job.jobPostingTitle} />
+                      <ApplicationMeta label="Resume" value={job.resumeFileName} />
+                      <ApplicationMeta label="Resume size" value={job.characterCount ? `${job.characterCount} chars` : undefined} />
+                      <ApplicationMeta label="Evidence chunks" value={job.chunkCount} />
+                      <ApplicationMeta label="LLM model" value={job.llmModel} />
+                      <ApplicationMeta label="Embedding model" value={job.embeddingModel} />
+                      <ApplicationMeta label="Created" value={job.createdAt} />
+                      <ApplicationMeta label="Updated" value={job.updatedAt} />
+                    </div>
+
+                    {job.llmRecommendation && (
+                      <section className="application-detail-block">
+                        <h3>LLM recommendation</h3>
+                        <p>{job.llmRecommendation}</p>
+                      </section>
+                    )}
+
+                    {job.jobDescription && (
+                      <section className="application-detail-block">
+                        <h3>Job description</h3>
+                        <p>{job.jobDescription}</p>
+                      </section>
+                    )}
+
+                    {job.errorMessage && (
+                      <section className="application-detail-block danger">
+                        <h3>Analysis error</h3>
+                        <p>{job.errorMessage}</p>
+                      </section>
+                    )}
+
+                    <button className="secondary-button application-action" type="button" onClick={() => onUseJob(job)}>
+                      <Target size={16} />
+                      Use for new analysis
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+};
 
 const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
   <section className="admin-overview">
@@ -776,6 +901,18 @@ export const App = () => {
       setPostingStatus("error");
       setPostingError(caught instanceof Error ? caught.message : "Job posting creation failed.");
     }
+  };
+
+  const useJobForNewAnalysis = (job: JobRecord) => {
+    const activePosting = job.jobPostingId
+      ? jobPostings.find((posting) => posting.id === job.jobPostingId && posting.status === "active")
+      : undefined;
+
+    setJobTitle(job.jobTitle);
+    setApplicationDate(job.applicationDate);
+    setJobDescription(job.jobDescription ?? "");
+    setSelectedJobPostingId(activePosting ? String(activePosting.id) : "");
+    setActiveView("dashboard");
   };
 
   if (!user) {
@@ -1479,6 +1616,12 @@ export const App = () => {
                   )}
                 </div>
               </section>
+
+              <ProfileApplications
+                jobs={jobs}
+                isAdmin={user.role === "admin"}
+                onUseJob={useJobForNewAnalysis}
+              />
             </div>
           )}
 
