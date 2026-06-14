@@ -56,6 +56,8 @@ import {
 const jobRow = {
   id: 12,
   user_id: 7,
+  job_posting_id: 4,
+  job_posting_title: "Platform Staff Engineer",
   user_name: "Ada Lovelace",
   user_email: "ada@example.com",
   status: "completed" as const,
@@ -111,6 +113,7 @@ describe("postgresStore", () => {
     ).resolves.toBe(12);
     expect(queryPostgres).toHaveBeenCalledWith("jobs.create", [
       7,
+      null,
       "2026-06-14",
       "Staff Engineer",
       null,
@@ -169,6 +172,8 @@ describe("postgresStore", () => {
       {
         id: 12,
         userId: 7,
+        jobPostingId: 4,
+        jobPostingTitle: "Platform Staff Engineer",
         userName: "Ada Lovelace",
         userEmail: "ada@example.com",
         status: "completed",

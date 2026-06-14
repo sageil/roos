@@ -10,7 +10,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users can review their own resumes, applied jobs, LLM match analysis, evidence, and recommendations.
 - Users have a dedicated login page and profile page.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
-- Admins can review all registered users, job postings, applications, and analysis status.
+- Admins can create job postings and review all registered users, job postings, candidate matches, and analysis status.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
 - Generates a structured analysis with fit score, strengths, gaps, risks, and prioritized recommendations.
 
@@ -106,6 +106,8 @@ ADMIN_PASSWORD=ChangeThisAdminPassword123
 ```
 
 Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview` and the admin overview in the UI.
+
+Admins can create reusable job postings from the dashboard. Users and admins can then select a posting when analyzing a resume; the resulting candidate match is linked to that posting and visible in the admin candidate-match overview.
 
 For OpenAI:
 

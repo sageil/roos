@@ -1,6 +1,8 @@
 SELECT
   j.id::int,
   j.user_id::int,
+  j.job_posting_id::int,
+  jp.title AS job_posting_title,
   u.name AS user_name,
   u.email AS user_email,
   j.status,
@@ -21,5 +23,6 @@ SELECT
   j.updated_at::text
 FROM jobs j
 LEFT JOIN users u ON u.id = j.user_id
+LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
 WHERE j.id = $1
   AND ($2::bigint IS NULL OR j.user_id = $2::bigint);

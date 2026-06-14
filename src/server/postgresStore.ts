@@ -11,6 +11,8 @@ type JobStatus = "running" | "completed" | "failed";
 type JobRow = {
   id: number;
   user_id: number | null;
+  job_posting_id: number | null;
+  job_posting_title: string | null;
   user_name: string | null;
   user_email: string | null;
   status: JobStatus;
@@ -42,6 +44,8 @@ const vectorLiteral = (embedding: number[]) => `[${embedding.join(",")}]`;
 const mapRow = (row: JobRow): JobRecord => ({
   id: row.id,
   userId: row.user_id ?? undefined,
+  jobPostingId: row.job_posting_id ?? undefined,
+  jobPostingTitle: row.job_posting_title ?? undefined,
   userName: row.user_name ?? undefined,
   userEmail: row.user_email ?? undefined,
   status: row.status,
@@ -63,6 +67,7 @@ const mapRow = (row: JobRow): JobRecord => ({
 
 export const createJob = async ({
   userId,
+  jobPostingId,
   applicationDate,
   jobTitle,
   jobDescription,
@@ -70,6 +75,7 @@ export const createJob = async ({
   characterCount
 }: {
   userId: number;
+  jobPostingId?: number;
   applicationDate: string;
   jobTitle: string;
   jobDescription?: string;
@@ -79,7 +85,15 @@ export const createJob = async ({
   withPostgres(async () => {
     const result = await queryPostgres<{ id: string }>(
       queries.jobs.create,
-      [userId, applicationDate, jobTitle, jobDescription || null, resumeFileName, characterCount]
+      [
+        userId,
+        jobPostingId ?? null,
+        applicationDate,
+        jobTitle,
+        jobDescription || null,
+        resumeFileName,
+        characterCount
+      ]
     );
 
     return Number(result.rows[0].id);

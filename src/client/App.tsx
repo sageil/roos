@@ -31,7 +31,10 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   AdminOverviewResponse,
   AnalyzeResponse,
+  CreateJobPostingResponse,
   JobRecord,
+  JobPostingRecord,
+  JobPostingsResponse,
   JobsResponse,
   LoginResponse,
   ProfileResponse,
@@ -200,6 +203,12 @@ const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
         caption={`${overview.stats.completedJobCount} completed`}
       />
       <MetricTile
+        icon={<BriefcaseBusiness size={17} />}
+        label="Postings"
+        value={`${overview.stats.jobPostingCount}`}
+        caption="admin-created roles"
+      />
+      <MetricTile
         icon={<AlertCircle size={17} />}
         label="Failures"
         value={`${overview.stats.failedJobCount}`}
@@ -233,11 +242,35 @@ const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
           <h2>Job Postings</h2>
         </div>
         <div className="admin-list">
+          {overview.jobPostings.slice(0, 10).map((posting) => (
+            <article className="admin-row" key={posting.id}>
+              <div>
+                <strong>{posting.title}</strong>
+                <span>{posting.status} | {posting.createdAt}</span>
+              </div>
+              <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
+                {posting.matchCount ?? 0} matches
+              </StatusBadge>
+              <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
+                Top {posting.topFitScore ?? 0}/100
+              </StatusBadge>
+              <p>{posting.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="surface-card">
+        <div className="panel-heading">
+          <Target size={18} />
+          <h2>Candidate Matches</h2>
+        </div>
+        <div className="admin-list">
           {overview.jobs.slice(0, 10).map((job) => (
             <article className="admin-row" key={job.id}>
               <div>
                 <strong>{job.jobTitle}</strong>
                 <span>{job.userEmail ?? "Unassigned"} | {job.applicationDate}</span>
+                {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
               </div>
               <StatusBadge tone={job.status === "completed" ? "success" : job.status === "failed" ? "danger" : "warning"}>
                 {job.status}
@@ -261,6 +294,8 @@ export const App = () => {
   const [error, setError] = useState("");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [jobPostings, setJobPostings] = useState<JobPostingRecord[]>([]);
+  const [selectedJobPostingId, setSelectedJobPostingId] = useState("");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [token, setToken] = useState(() => localStorage.getItem(authStorageKey) || "");
   const [user, setUser] = useState<UserRecord | null>(null);
@@ -286,6 +321,10 @@ export const App = () => {
   const [registrationStatus, setRegistrationStatus] = useState<Status>("idle");
   const [registrationError, setRegistrationError] = useState("");
   const [registeredUser, setRegisteredUser] = useState<UserRecord | null>(null);
+  const [newPostingTitle, setNewPostingTitle] = useState("");
+  const [newPostingDescription, setNewPostingDescription] = useState("");
+  const [postingStatus, setPostingStatus] = useState<Status>("idle");
+  const [postingError, setPostingError] = useState("");
 
   const authHeaders = (activeToken = token) => ({
     Authorization: `Bearer ${activeToken}`
@@ -305,6 +344,7 @@ export const App = () => {
     setToken("");
     setUser(null);
     setJobs([]);
+    setJobPostings([]);
     setAdminOverview(null);
     setResult(null);
     setActiveView("dashboard");
@@ -345,6 +385,23 @@ export const App = () => {
     }
 
     setAdminOverview((await response.json()) as AdminOverviewResponse);
+  };
+
+  const loadJobPostings = async (activeToken = token) => {
+    if (!activeToken) {
+      setJobPostings([]);
+      return;
+    }
+
+    const response = await fetch("/api/job-postings", {
+      headers: authHeaders(activeToken)
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const data = (await response.json()) as JobPostingsResponse;
+    setJobPostings(data.jobPostings);
   };
 
   const loadProfile = async (activeToken = token) => {
@@ -399,6 +456,7 @@ export const App = () => {
       setProfileName(data.user.name);
       setProfileEmail(data.user.email);
       await loadJobs(token);
+      await loadJobPostings(token);
       await loadProfile(token);
       if (data.user.role === "admin") {
         await loadAdminOverview(token);
@@ -407,6 +465,16 @@ export const App = () => {
 
     void loadSession();
   }, []);
+
+  useEffect(() => {
+    const selectedPosting = jobPostings.find((posting) => String(posting.id) === selectedJobPostingId);
+    if (!selectedPosting) {
+      return;
+    }
+
+    setJobTitle(selectedPosting.title);
+    setJobDescription(selectedPosting.description);
+  }, [jobPostings, selectedJobPostingId]);
 
   const fileLabel = useMemo(() => {
     if (!file) {
@@ -443,6 +511,9 @@ export const App = () => {
 
     const payload = new FormData();
     payload.set("resume", file);
+    if (selectedJobPostingId) {
+      payload.set("jobPostingId", selectedJobPostingId);
+    }
     payload.set("jobTitle", jobTitle);
     payload.set("applicationDate", applicationDate);
     payload.set("jobDescription", jobDescription);
@@ -463,6 +534,7 @@ export const App = () => {
       setResult(data);
       setStatus("success");
       void loadJobs();
+      void loadJobPostings();
       if (user.role === "admin") {
         void loadAdminOverview();
       }
@@ -500,6 +572,7 @@ export const App = () => {
       setLoginPassword("");
       setLoginStatus("success");
       await loadJobs(session.token);
+      await loadJobPostings(session.token);
       await loadProfile(session.token);
       if (session.user.role === "admin") {
         await loadAdminOverview(session.token);
@@ -553,6 +626,7 @@ export const App = () => {
       setRegistrationStatus("success");
       setRegistrationPassword("");
       await loadJobs(registered.token);
+      await loadJobPostings(registered.token);
       await loadProfile(registered.token);
     } catch (caught) {
       setRegistrationStatus("error");
@@ -633,6 +707,42 @@ export const App = () => {
     } catch (caught) {
       setResumeUploadStatus("error");
       setResumeUploadError(caught instanceof Error ? caught.message : "Resume upload failed.");
+    }
+  };
+
+  const createPosting = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPostingError("");
+    setPostingStatus("loading");
+
+    try {
+      const response = await fetch("/api/admin/job-postings", {
+        method: "POST",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          title: newPostingTitle,
+          description: newPostingDescription
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Job posting creation failed.");
+      }
+
+      const created = data as CreateJobPostingResponse;
+      setJobPostings((current) => [created.jobPosting, ...current]);
+      setSelectedJobPostingId(String(created.jobPosting.id));
+      setNewPostingTitle("");
+      setNewPostingDescription("");
+      setPostingStatus("success");
+      await loadAdminOverview();
+    } catch (caught) {
+      setPostingStatus("error");
+      setPostingError(caught instanceof Error ? caught.message : "Job posting creation failed.");
     }
   };
 
@@ -1020,6 +1130,23 @@ export const App = () => {
             </label>
 
             <label className="field">
+              <span>Job posting</span>
+              <select
+                value={selectedJobPostingId}
+                onChange={(event) => setSelectedJobPostingId(event.target.value)}
+              >
+                <option value="">Custom job profile</option>
+                {jobPostings
+                  .filter((posting) => posting.status === "active")
+                  .map((posting) => (
+                    <option key={posting.id} value={posting.id}>
+                      {posting.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
+            <label className="field">
               <span>Job title</span>
               <input
                 value={jobTitle}
@@ -1054,6 +1181,56 @@ export const App = () => {
               Analyze resume
             </button>
           </form>
+
+          {user?.role === "admin" && (
+            <>
+              <div className="section-kicker">
+                <span>Add job posting</span>
+                <StatusBadge tone={postingStatus === "loading" ? "warning" : "neutral"}>
+                  {postingStatus === "loading" ? "Saving" : "Admin"}
+                </StatusBadge>
+              </div>
+
+              <form className="form-stack" onSubmit={createPosting}>
+                <label className="field">
+                  <span>Posting title</span>
+                  <input
+                    value={newPostingTitle}
+                    onChange={(event) => setNewPostingTitle(event.target.value)}
+                    placeholder="Backend Platform Engineer"
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Posting description</span>
+                  <textarea
+                    value={newPostingDescription}
+                    onChange={(event) => setNewPostingDescription(event.target.value)}
+                    placeholder="Paste the job posting requirements, responsibilities, and qualifications."
+                  />
+                </label>
+
+                <button className="secondary-button" disabled={postingStatus === "loading"} type="submit">
+                  {postingStatus === "loading" ? <Loader2 className="spin" size={18} /> : <BriefcaseBusiness size={18} />}
+                  Save posting
+                </button>
+              </form>
+
+              {postingStatus === "success" && (
+                <div className="notice success">
+                  <CheckCircle2 size={18} />
+                  <span>Job posting saved and selected for analysis.</span>
+                </div>
+              )}
+
+              {postingStatus === "error" && (
+                <div className="notice error">
+                  <AlertCircle size={18} />
+                  <span>{postingError}</span>
+                </div>
+              )}
+            </>
+          )}
 
           {status === "error" && (
             <div className="notice error">

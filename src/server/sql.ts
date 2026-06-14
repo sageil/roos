@@ -25,6 +25,11 @@ export const queries = {
     listForUser: loadSql("jobs", "list_for_user.sql"),
     get: loadSql("jobs", "get.sql")
   },
+  jobPostings: {
+    create: loadSql("job_postings", "create.sql"),
+    getActive: loadSql("job_postings", "get_active.sql"),
+    list: loadSql("job_postings", "list.sql")
+  },
   users: {
     create: loadSql("users", "create.sql"),
     findByEmail: loadSql("users", "find_by_email.sql"),

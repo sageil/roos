@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import path from "node:path";
 
 const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
-const adminPassword = process.env.ADMIN_PASSWORD || "AdminPass12345";
+const adminPassword = process.env.ADMIN_PASSWORD || "ChangeThisAdminPassword123";
 const resumeFixture = path.resolve("tests/fixtures/resume.md");
 
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.round(Math.random() * 100_000)}@example.com`;
@@ -85,5 +85,16 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
     await expect(page.getByText(regularEmail)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Job Postings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Candidate Matches" })).toBeVisible();
+
+    const postingTitle = `E2E Platform Engineer ${Date.now()}`;
+    await page.getByPlaceholder("Backend Platform Engineer").fill(postingTitle);
+    await page
+      .getByPlaceholder("Paste the job posting requirements, responsibilities, and qualifications.")
+      .fill("Build secure TypeScript services, PostgreSQL systems, and production APIs.");
+    await page.getByRole("button", { name: "Save posting" }).click();
+
+    await expect(page.getByText("Job posting saved and selected for analysis.")).toBeVisible();
+    await expect(page.locator(".admin-row").filter({ hasText: postingTitle })).toBeVisible();
   });
 });

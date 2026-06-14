@@ -16,7 +16,8 @@ Use this file as the working contract for AI agents and automation touching this
 ## Core Behavior
 
 - Users can register, log in, update profile details, upload resumes, and review their own applications and LLM analysis.
-- Admins can review all users, job postings, applications, and analysis status.
+- Admins can create job postings and review all users, postings, candidate matches, applications, and analysis status.
+- Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`; keep postings separate from application/match records.
 - Resume profile uploads are versioned append-only records. Never replace or overwrite an older resume version.
 - Resume analysis chunks uploaded text, creates embeddings, stores vectors in PostgreSQL with pgvector, and ranks evidence for the LLM response.
 - Sessions store hashed bearer tokens only.
@@ -38,6 +39,7 @@ Use this file as the working contract for AI agents and automation touching this
 - Migrations live in `sql/migrations/`.
 - Query files are grouped by domain:
   - `sql/jobs/`
+  - `sql/job_postings/`
   - `sql/users/`
   - `sql/sessions/`
   - `sql/resume_versions/`

@@ -18,6 +18,7 @@ type AdminUserRow = UserRow & {
 type AdminStatsRow = {
   user_count: number;
   job_count: number;
+  job_posting_count: number;
   completed_job_count: number;
   failed_job_count: number;
 };
@@ -129,6 +130,7 @@ export const getAdminStats = async (): Promise<AdminStats> => {
   return {
     userCount: row.user_count,
     jobCount: row.job_count,
+    jobPostingCount: row.job_posting_count,
     completedJobCount: row.completed_job_count,
     failedJobCount: row.failed_job_count
   };

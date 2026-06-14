@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { UserRecord } from "../shared/types.js";
 import { analyzeResume } from "./analysis.js";
 import { config } from "./config.js";
+import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
 import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js";
@@ -26,18 +27,20 @@ const upload = multer({
 });
 
 const analyzeBodySchema = z.object({
+  jobPostingId: z.coerce.number().int().positive().optional(),
   jobTitle: z.string().trim().optional(),
   targetRole: z.string().trim().optional(),
   applicationDate: z.string().trim().min(4, "Application date is required."),
   jobDescription: z.string().trim().optional()
 }).transform((body) => {
   const jobTitle = body.jobTitle || body.targetRole;
-  if (!jobTitle || jobTitle.length < 2) {
+  if (!body.jobPostingId && (!jobTitle || jobTitle.length < 2)) {
     throw new Error("Job title is required.");
   }
 
   return {
-    jobTitle,
+    jobPostingId: body.jobPostingId,
+    jobTitle: jobTitle ?? "",
     applicationDate: body.applicationDate,
     jobDescription: body.jobDescription
   };
@@ -62,6 +65,11 @@ const loginBodySchema = z.object({
 const updateProfileBodySchema = z.object({
   name: z.string().trim().min(2, "Name is required.").max(120, "Name is too long."),
   email: z.string().trim().email("Enter a valid email.").max(320, "Email is too long.")
+});
+
+const createJobPostingBodySchema = z.object({
+  title: z.string().trim().min(2, "Job title is required.").max(180, "Job title is too long."),
+  description: z.string().trim().min(10, "Job description is required.").max(20000, "Job description is too long.")
 });
 
 type AuthenticatedRequest = express.Request & {
@@ -138,6 +146,13 @@ app.get("/api/health", async (_request, response) => {
 app.get("/api/jobs", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   response.json({ jobs: await listJobs({ userId: user.id, role: user.role }) });
+});
+
+app.get("/api/job-postings", requireAuth, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  response.json({
+    jobPostings: await listJobPostings({ includeArchived: user.role === "admin" })
+  });
 });
 
 app.post("/api/register", async (request, response) => {
@@ -249,13 +264,31 @@ app.post("/api/logout", requireAuth, async (request, response) => {
 });
 
 app.get("/api/admin/overview", requireAuth, requireAdmin, async (_request, response) => {
-  const [users, jobs, stats] = await Promise.all([
+  const [users, jobs, jobPostings, stats] = await Promise.all([
     listUsers(),
     listJobs({ userId: 0, role: "admin", limit: 100 }),
+    listJobPostings({ includeArchived: true }),
     getAdminStats()
   ]);
 
-  response.json({ users, jobs, stats });
+  response.json({ users, jobs, jobPostings, stats });
+});
+
+app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, response) => {
+  try {
+    const { user } = request as AuthenticatedRequest;
+    const body = createJobPostingBodySchema.parse(request.body);
+    const jobPosting = await createJobPosting({
+      createdByUserId: user.id,
+      title: body.title,
+      description: body.description
+    });
+
+    response.status(201).json({ jobPosting });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Job posting creation failed.";
+    response.status(400).json({ error: message });
+  }
 });
 
 app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, response) => {
@@ -267,6 +300,16 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
     }
 
     const body = analyzeBodySchema.parse(request.body);
+    const selectedPosting = body.jobPostingId
+      ? await getActiveJobPosting(body.jobPostingId)
+      : undefined;
+    if (body.jobPostingId && !selectedPosting) {
+      response.status(400).json({ error: "Choose an active job posting." });
+      return;
+    }
+
+    const jobTitle = selectedPosting?.title ?? body.jobTitle;
+    const jobDescription = selectedPosting?.description ?? body.jobDescription;
     const resumeText = await extractResumeText(request.file);
 
     if (resumeText.length < 80) {
@@ -276,9 +319,10 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
 
     const jobId = await createJob({
       userId: user.id,
+      jobPostingId: selectedPosting?.id,
       applicationDate: body.applicationDate,
-      jobTitle: body.jobTitle,
-      jobDescription: body.jobDescription,
+      jobTitle,
+      jobDescription,
       resumeFileName: request.file.originalname,
       characterCount: resumeText.length
     });
@@ -290,8 +334,8 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
         jobId,
         body.applicationDate,
         resumeText,
-        body.jobTitle,
-        body.jobDescription
+        jobTitle,
+        jobDescription
       );
 
       await completeJob({ id: jobId, analysis, chunkCount });

@@ -386,7 +386,8 @@ h1 {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid var(--input);
   border-radius: 8px;
@@ -400,7 +401,8 @@ h1 {
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--ring);
 }

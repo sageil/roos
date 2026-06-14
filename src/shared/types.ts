@@ -8,6 +8,7 @@ export type AnalysisRequestMeta = {
   applicationDate: string;
   jobTitle: string;
   jobDescription?: string;
+  jobPostingId?: number;
 };
 
 export type ResumeAnalysis = {
@@ -40,6 +41,8 @@ export type AnalyzeResponse = {
 export type JobRecord = {
   id: number;
   userId?: number;
+  jobPostingId?: number;
+  jobPostingTitle?: string;
   userName?: string;
   userEmail?: string;
   status: "running" | "completed" | "failed";
@@ -89,6 +92,7 @@ export type AdminUserRecord = UserRecord & {
 export type AdminStats = {
   userCount: number;
   jobCount: number;
+  jobPostingCount: number;
   completedJobCount: number;
   failedJobCount: number;
 };
@@ -96,7 +100,29 @@ export type AdminStats = {
 export type AdminOverviewResponse = {
   users: AdminUserRecord[];
   jobs: JobRecord[];
+  jobPostings: JobPostingRecord[];
   stats: AdminStats;
+};
+
+export type JobPostingRecord = {
+  id: number;
+  createdByUserId?: number;
+  title: string;
+  description: string;
+  status: "active" | "archived";
+  createdAt: string;
+  updatedAt: string;
+  matchCount?: number;
+  averageFitScore?: number;
+  topFitScore?: number;
+};
+
+export type JobPostingsResponse = {
+  jobPostings: JobPostingRecord[];
+};
+
+export type CreateJobPostingResponse = {
+  jobPosting: JobPostingRecord;
 };
 
 export type ResumeVersionRecord = {

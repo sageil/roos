@@ -161,6 +161,7 @@ describe("userStore", () => {
         {
           user_count: 4,
           job_count: 9,
+          job_posting_count: 2,
           completed_job_count: 6,
           failed_job_count: 1
         }
@@ -170,6 +171,7 @@ describe("userStore", () => {
     await expect(getAdminStats()).resolves.toEqual({
       userCount: 4,
       jobCount: 9,
+      jobPostingCount: 2,
       completedJobCount: 6,
       failedJobCount: 1
     });
