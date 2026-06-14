@@ -119,7 +119,7 @@ const rankEvidence = async (
 };
 
 const systemPrompt =
-  "You are a hiring-focused resume analyst. Return only concise JSON. Be specific, evidence-based, and fair. Do not invent credentials.";
+  "You are a resume-to-job-fit analyst for the candidate. Return only concise JSON. Evaluate how well the uploaded resume matches the target job profile. Be specific, evidence-based, and fair. Do not write advice for an interviewer or recruiter. Do not invent credentials.";
 
 const userPrompt = (
   jobTitle: string,
@@ -141,15 +141,15 @@ Full resume text:
 ${resumeText.slice(0, 18000)}
 
 Return JSON with exactly these keys:
-candidateSummary: string
+candidateSummary: string, summarize resume-to-job-profile fitness and the main reason for the score
 fitScore: number from 0 to 100
 fitLevel: "low" | "medium" | "high"
-strengths: string[]
-gaps: string[]
+strengths: string[], resume evidence that matches the job profile
+gaps: string[], important job requirements not clearly supported by the resume
 risks: string[]
-recommendations: string[]
-suggestedKeywords: string[]
-interviewQuestions: string[]`;
+recommendations: string[], candidate-facing resume or positioning changes to improve fit for this job profile
+suggestedKeywords: string[], missing or under-emphasized job-profile keywords the candidate can truthfully add
+interviewQuestions: string[], questions a hiring team might ask to verify claimed fit`;
 
 const analyzeWithResponsesApi = async (prompt: string): Promise<string> => {
   const client = createLlmClient();

@@ -77,6 +77,25 @@ const fitLabel = (score: number) => {
   return "Needs work";
 };
 
+const fitTone = (score: number): "success" | "warning" | "danger" => {
+  if (score >= 80) {
+    return "success";
+  }
+  if (score >= 60) {
+    return "warning";
+  }
+  return "danger";
+};
+
+const JobFitBadge = ({ job }: { job: JobRecord }) =>
+  typeof job.fitScore === "number" ? (
+    <StatusBadge tone={fitTone(job.fitScore)}>
+      {fitLabel(job.fitScore)} | {job.fitScore}/100
+    </StatusBadge>
+  ) : (
+    <StatusBadge tone="neutral">No fit score</StatusBadge>
+  );
+
 const StatusBadge = ({
   tone = "neutral",
   children
@@ -151,7 +170,7 @@ const JobHistory = ({ jobs, isAdmin }: { jobs: JobRecord[]; isAdmin: boolean }) 
               </span>
               {isAdmin && job.userEmail && <span>{job.userName} | {job.userEmail}</span>}
             </div>
-            {typeof job.fitScore === "number" && <b>{job.fitScore}</b>}
+            <JobFitBadge job={job} />
             {job.llmRecommendation && <p>{job.llmRecommendation}</p>}
             {job.errorMessage && <p className="job-error">{job.errorMessage}</p>}
           </article>
@@ -223,6 +242,7 @@ const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
               <StatusBadge tone={job.status === "completed" ? "success" : job.status === "failed" ? "danger" : "warning"}>
                 {job.status}
               </StatusBadge>
+              <JobFitBadge job={job} />
               <p>{job.llmRecommendation || job.jobDescription || "No details stored."}</p>
             </article>
           ))}
