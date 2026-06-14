@@ -93,9 +93,14 @@ const fitTone = (score: number): "success" | "warning" | "danger" => {
   return "danger";
 };
 
-const evidenceSimilarityLabel = (score: number) => {
-  const percentage = Math.max(0, Math.min(100, Math.round(score * 100)));
-  return percentage === 0 ? "<1% similarity" : `${percentage}% similarity`;
+const evidenceRelevanceLabel = (score: number) => {
+  if (score >= 0.65) {
+    return "Evidence relevance: high";
+  }
+  if (score >= 0.35) {
+    return "Evidence relevance: medium";
+  }
+  return "Evidence relevance: low";
 };
 
 const JobFitBadge = ({ job }: { job: JobRecord }) =>
@@ -253,7 +258,7 @@ const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) 
             <article className="application-evidence-row" key={chunk.id}>
               <div>
                 <strong>Chunk {chunk.id}</strong>
-                <span>{evidenceSimilarityLabel(chunk.score)}</span>
+                <span>{evidenceRelevanceLabel(chunk.score)}</span>
               </div>
               <p>{chunk.text}</p>
             </article>
@@ -1821,7 +1826,7 @@ export const App = () => {
                     <article className="evidence-card" key={chunk.id}>
                       <div>
                         <strong>Chunk {chunk.id}</strong>
-                        <span>{evidenceSimilarityLabel(chunk.score)}</span>
+                        <span>{evidenceRelevanceLabel(chunk.score)}</span>
                       </div>
                       <p>{chunk.text}</p>
                     </article>
