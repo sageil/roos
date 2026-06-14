@@ -65,6 +65,28 @@ const cachedAnalysis: ResumeAnalysis = {
   recommendations: ["Add deployment details"],
   suggestedKeywords: ["PostgreSQL"],
   interviewQuestions: ["How did you improve reliability?"],
+  requirementAssessments: [
+    {
+      category: "technical",
+      requirement: "Build TypeScript services",
+      importance: "must_have",
+      status: "met",
+      evidence: ["Built secure TypeScript APIs"],
+      rationale: "The resume directly describes TypeScript API delivery."
+    }
+  ],
+  scoreBreakdown: {
+    minimumQualifications: 75,
+    technicalCompetencies: 80,
+    domainExperience: 65,
+    preferredQualifications: 60,
+    seniorityScope: 74,
+    evidenceQuality: 77
+  },
+  fairnessReview: {
+    ignoredFactors: ["name"],
+    notes: ["Only job-related evidence was considered."]
+  },
   evidence: [{ id: 1, text: "old evidence", score: 0.2 }]
 };
 
@@ -146,15 +168,9 @@ describe("analyzeResume", () => {
         candidateSummary: "Cached summary",
         fitScore: 75,
         fitLevel: "medium",
-        requirementAssessments: [],
-        scoreBreakdown: {
-          minimumQualifications: 75,
-          technicalCompetencies: 75,
-          domainExperience: 75,
-          preferredQualifications: 75,
-          seniorityScope: 75,
-          evidenceQuality: 75
-        },
+        requirementAssessments: cachedAnalysis.requirementAssessments,
+        scoreBreakdown: cachedAnalysis.scoreBreakdown,
+        fairnessReview: cachedAnalysis.fairnessReview,
         evidence: [{ id: 1, text: "fresh evidence", score: 0.7 }]
       },
       chunkCount: 1

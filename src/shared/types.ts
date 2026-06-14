@@ -44,9 +44,9 @@ export type ResumeAnalysis = {
   recommendations: string[];
   suggestedKeywords: string[];
   interviewQuestions: string[];
-  requirementAssessments?: RequirementAssessment[];
-  scoreBreakdown?: ScoreBreakdown;
-  fairnessReview?: FairnessReview;
+  requirementAssessments: RequirementAssessment[];
+  scoreBreakdown: ScoreBreakdown;
+  fairnessReview: FairnessReview;
   evidence: EvidenceChunk[];
 };
 

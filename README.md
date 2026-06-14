@@ -91,8 +91,7 @@ The app creates the `vector` extension and required tables on startup.
 
 Database SQL is kept outside the TypeScript store:
 
-- `sql/migrations/001_init.sql` creates the pgvector extension, tables, indexes, and `match_resume_chunks(...)`.
-- `sql/migrations/002_analysis_cache.sql` creates the repeat-analysis cache for identical resume/job/model inputs.
+- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, and `match_resume_chunks(...)`.
 - `sql/analysis_cache/*.sql` contains cached analysis lookup and upsert queries.
 - `sql/jobs/*.sql` contains job CRUD queries.
 - `sql/users/*.sql` and `sql/sessions/*.sql` contain account, role, and session queries.

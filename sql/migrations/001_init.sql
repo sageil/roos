@@ -147,6 +147,18 @@ CREATE TABLE IF NOT EXISTS resume_versions (
   UNIQUE (user_id, version_number)
 );
 
+CREATE TABLE IF NOT EXISTS analysis_cache (
+  cache_key TEXT PRIMARY KEY,
+  resume_hash TEXT NOT NULL,
+  job_profile_hash TEXT NOT NULL,
+  llm_model TEXT NOT NULL,
+  embedding_model TEXT NOT NULL,
+  analysis_json JSONB NOT NULL,
+  chunk_count INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS resume_chunks_job_id_idx ON resume_chunks(job_id);
 CREATE INDEX IF NOT EXISTS jobs_user_id_idx ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS jobs_job_posting_id_idx ON jobs(job_posting_id);
@@ -154,6 +166,7 @@ CREATE INDEX IF NOT EXISTS job_postings_status_created_at_idx ON job_postings(st
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS resume_versions_user_id_idx ON resume_versions(user_id);
+CREATE INDEX IF NOT EXISTS analysis_cache_models_idx ON analysis_cache(llm_model, embedding_model);
 
 CREATE OR REPLACE FUNCTION match_resume_chunks(
   target_job_id BIGINT,

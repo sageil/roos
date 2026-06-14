@@ -94,6 +94,28 @@ const analysis: ResumeAnalysis = {
   recommendations: ["Lead with systems work", "Add measurable outcomes"],
   suggestedKeywords: ["platform"],
   interviewQuestions: ["How did you scale it?"],
+  requirementAssessments: [
+    {
+      category: "technical",
+      requirement: "Build TypeScript services",
+      importance: "must_have",
+      status: "met",
+      evidence: ["TypeScript"],
+      rationale: "The resume includes direct TypeScript evidence."
+    }
+  ],
+  scoreBreakdown: {
+    minimumQualifications: 88,
+    technicalCompetencies: 90,
+    domainExperience: 80,
+    preferredQualifications: 76,
+    seniorityScope: 86,
+    evidenceQuality: 89
+  },
+  fairnessReview: {
+    ignoredFactors: ["name"],
+    notes: ["Only job-related evidence was considered."]
+  },
   evidence: [{ id: 1, text: "Built systems", score: 0.92 }]
 };
 

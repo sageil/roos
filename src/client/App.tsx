@@ -239,10 +239,6 @@ const ApplicationAnalysisList = ({
 };
 
 const scoreBreakdownEntries = (analysis: ResumeAnalysis) => {
-  if (!analysis.scoreBreakdown) {
-    return [];
-  }
-
   return [
     ["Minimum qualifications", analysis.scoreBreakdown.minimumQualifications],
     ["Technical competencies", analysis.scoreBreakdown.technicalCompetencies],
@@ -265,24 +261,22 @@ const HREvaluationDetails = ({
 
   return (
     <>
-      {scoreEntries.length > 0 && (
-        <section className={sectionClass}>
-          <div className="panel-heading">
-            <ClipboardList size={19} />
-            <h2>HR Score Breakdown</h2>
-          </div>
-          <div className="score-breakdown-grid">
-            {scoreEntries.map(([label, value]) => (
-              <div className="score-breakdown-item" key={label}>
-                <span>{label}</span>
-                <strong>{Math.round(value)}/100</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      <section className={sectionClass}>
+        <div className="panel-heading">
+          <ClipboardList size={19} />
+          <h2>HR Score Breakdown</h2>
+        </div>
+        <div className="score-breakdown-grid">
+          {scoreEntries.map(([label, value]) => (
+            <div className="score-breakdown-item" key={label}>
+              <span>{label}</span>
+              <strong>{Math.round(value)}/100</strong>
+            </div>
+          ))}
+        </div>
+      </section>
 
-      {analysis.requirementAssessments && analysis.requirementAssessments.length > 0 && (
+      {analysis.requirementAssessments.length > 0 && (
         <section className={sectionClass}>
           <div className="panel-heading">
             <CheckCircle2 size={19} />
@@ -309,30 +303,28 @@ const HREvaluationDetails = ({
         </section>
       )}
 
-      {analysis.fairnessReview && (
-        <section className={sectionClass}>
-          <div className="panel-heading">
-            <ShieldCheck size={19} />
-            <h2>Fairness Review</h2>
+      <section className={sectionClass}>
+        <div className="panel-heading">
+          <ShieldCheck size={19} />
+          <h2>Fairness Review</h2>
+        </div>
+        {analysis.fairnessReview.ignoredFactors.length > 0 && (
+          <div className="tag-list">
+            {analysis.fairnessReview.ignoredFactors.map((factor) => (
+              <span className="tag-chip" key={factor}>{factor}</span>
+            ))}
           </div>
-          {analysis.fairnessReview.ignoredFactors.length > 0 && (
-            <div className="tag-list">
-              {analysis.fairnessReview.ignoredFactors.map((factor) => (
-                <span className="tag-chip" key={factor}>{factor}</span>
-              ))}
-            </div>
-          )}
-          {analysis.fairnessReview.notes.length > 0 ? (
-            <ul className="item-list">
-              {analysis.fairnessReview.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No fairness notes returned.</p>
-          )}
-        </section>
-      )}
+        )}
+        {analysis.fairnessReview.notes.length > 0 ? (
+          <ul className="item-list">
+            {analysis.fairnessReview.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">No fairness notes returned.</p>
+        )}
+      </section>
     </>
   );
 };

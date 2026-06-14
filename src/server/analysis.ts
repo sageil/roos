@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import type { EvidenceChunk, FairnessReview, RequirementAssessment, ResumeAnalysis, ScoreBreakdown } from "../shared/types.js";
+import type { EvidenceChunk, ResumeAnalysis } from "../shared/types.js";
 import { chunkResumeText } from "./chunking.js";
 import { config } from "./config.js";
 import { cosineSimilarity, createEmbeddings } from "./embeddings.js";
@@ -32,11 +32,11 @@ const analysisSchema = z.object({
     preferredQualifications: z.number().min(0).max(100),
     seniorityScope: z.number().min(0).max(100),
     evidenceQuality: z.number().min(0).max(100)
-  }).optional(),
+  }),
   fairnessReview: z.object({
     ignoredFactors: z.array(z.string()).default([]),
     notes: z.array(z.string()).default([])
-  }).optional()
+  })
 });
 
 const analysisCacheVersion = "2026-06-14-hr-structured-rubric-v1";
@@ -328,27 +328,11 @@ const normalizeAnalysis = (
   evidence: EvidenceChunk[]
 ): ResumeAnalysis => {
   const fitScore = Math.round(analysis.fitScore);
-  const requirementAssessments: RequirementAssessment[] = analysis.requirementAssessments ?? [];
-  const scoreBreakdown: ScoreBreakdown = analysis.scoreBreakdown ?? {
-    minimumQualifications: fitScore,
-    technicalCompetencies: fitScore,
-    domainExperience: fitScore,
-    preferredQualifications: fitScore,
-    seniorityScope: fitScore,
-    evidenceQuality: fitScore
-  };
-  const fairnessReview: FairnessReview = analysis.fairnessReview ?? {
-    ignoredFactors: [],
-    notes: ["Legacy analysis did not include a structured fairness review."]
-  };
 
   return {
     ...analysis,
     fitScore,
     fitLevel: fitLevelForScore(fitScore),
-    requirementAssessments,
-    scoreBreakdown,
-    fairnessReview,
     evidence
   };
 };
