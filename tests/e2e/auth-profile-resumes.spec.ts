@@ -26,7 +26,7 @@ const seededAnalysis: ResumeAnalysis = {
   interviewQuestions: ["Which API decisions improved reliability?"],
   requirementAssessments: [
     {
-      category: "technical",
+      category: "role_competency",
       requirement: "Build secure TypeScript services",
       importance: "must_have",
       status: "met",
@@ -36,7 +36,7 @@ const seededAnalysis: ResumeAnalysis = {
   ],
   scoreBreakdown: {
     minimumQualifications: 84,
-    technicalCompetencies: 88,
+    roleCompetencies: 88,
     domainExperience: 76,
     preferredQualifications: 70,
     seniorityScope: 82,

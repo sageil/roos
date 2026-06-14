@@ -67,7 +67,7 @@ const cachedAnalysis: ResumeAnalysis = {
   interviewQuestions: ["How did you improve reliability?"],
   requirementAssessments: [
     {
-      category: "technical",
+      category: "role_competency",
       requirement: "Build TypeScript services",
       importance: "must_have",
       status: "met",
@@ -77,7 +77,7 @@ const cachedAnalysis: ResumeAnalysis = {
   ],
   scoreBreakdown: {
     minimumQualifications: 75,
-    technicalCompetencies: 80,
+    roleCompetencies: 80,
     domainExperience: 65,
     preferredQualifications: 60,
     seniorityScope: 74,
@@ -92,8 +92,6 @@ const cachedAnalysis: ResumeAnalysis = {
 
 const llmAnalysis = {
   candidateSummary: "Fresh summary",
-  fitScore: 79,
-  fitLevel: "high",
   strengths: ["TypeScript APIs"],
   gaps: ["Kubernetes"],
   risks: [],
@@ -102,7 +100,7 @@ const llmAnalysis = {
   interviewQuestions: ["How did you improve reliability?"],
   requirementAssessments: [
     {
-      category: "technical",
+      category: "role_competency",
       requirement: "Build TypeScript services",
       importance: "must_have",
       status: "met",
@@ -112,7 +110,7 @@ const llmAnalysis = {
   ],
   scoreBreakdown: {
     minimumQualifications: 80,
-    technicalCompetencies: 84,
+    roleCompetencies: 84,
     domainExperience: 70,
     preferredQualifications: 60,
     seniorityScope: 75,
@@ -121,6 +119,54 @@ const llmAnalysis = {
   fairnessReview: {
     ignoredFactors: ["name", "address"],
     notes: ["Only job-related resume evidence was considered."]
+  }
+};
+
+const partialMustHaveAnalysis = {
+  candidateSummary: "The candidate has strong adjacent experience but only partial evidence for a core role requirement.",
+  strengths: ["Managed regional accounts", "Led client retention programs"],
+  gaps: ["No direct evidence of owning enterprise procurement negotiations"],
+  risks: ["Core buying-cycle ownership needs verification"],
+  recommendations: ["Add truthful examples of procurement negotiation ownership"],
+  suggestedKeywords: ["enterprise procurement", "contract negotiation"],
+  interviewQuestions: ["Which procurement negotiations did you own end to end?"],
+  requirementAssessments: [
+    {
+      category: "minimum",
+      requirement: "5+ years managing strategic customer accounts",
+      importance: "must_have",
+      status: "met",
+      evidence: ["Managed regional accounts"],
+      rationale: "The resume directly supports account management experience."
+    },
+    {
+      category: "role_competency",
+      requirement: "Own enterprise procurement negotiations end to end",
+      importance: "must_have",
+      status: "partially_met",
+      evidence: ["Led client retention programs"],
+      rationale: "The resume shows related client ownership but not direct procurement negotiation ownership."
+    },
+    {
+      category: "domain",
+      requirement: "Experience in regulated financial services",
+      importance: "must_have",
+      status: "met",
+      evidence: ["Supported financial services clients"],
+      rationale: "The resume directly supports the domain requirement."
+    }
+  ],
+  scoreBreakdown: {
+    minimumQualifications: 95,
+    roleCompetencies: 94,
+    domainExperience: 96,
+    preferredQualifications: 90,
+    seniorityScope: 95,
+    evidenceQuality: 92
+  },
+  fairnessReview: {
+    ignoredFactors: ["name", "address"],
+    notes: ["Only job-related evidence was considered."]
   }
 };
 
@@ -166,8 +212,8 @@ describe("analyzeResume", () => {
     ).resolves.toMatchObject({
       analysis: {
         candidateSummary: "Cached summary",
-        fitScore: 75,
-        fitLevel: "medium",
+        fitScore: 82,
+        fitLevel: "high",
         requirementAssessments: cachedAnalysis.requirementAssessments,
         scoreBreakdown: cachedAnalysis.scoreBreakdown,
         fairnessReview: cachedAnalysis.fairnessReview,
@@ -202,8 +248,8 @@ describe("analyzeResume", () => {
     );
     expect(result.analysis).toMatchObject({
       candidateSummary: "Fresh summary",
-      fitScore: 79,
-      fitLevel: "medium",
+      fitScore: 84,
+      fitLevel: "high",
       requirementAssessments: llmAnalysis.requirementAssessments,
       scoreBreakdown: llmAnalysis.scoreBreakdown,
       fairnessReview: llmAnalysis.fairnessReview,
@@ -215,5 +261,27 @@ describe("analyzeResume", () => {
         chunkCount: 1
       })
     );
+  });
+
+  it("caps strong-fit scoring when any role-agnostic must-have is only partially evidenced", async () => {
+    getCachedAnalysis.mockResolvedValueOnce(undefined);
+    chatCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: JSON.stringify(partialMustHaveAnalysis) } }]
+    });
+
+    const result = await analyzeResume(
+      12,
+      "2026-06-14",
+      resumeText,
+      "Strategic Account Manager",
+      "Own enterprise customer renewals, procurement negotiations, and regulated financial services accounts."
+    );
+
+    expect(result.analysis).toMatchObject({
+      fitScore: 79,
+      fitLevel: "medium",
+      scoreBreakdown: partialMustHaveAnalysis.scoreBreakdown,
+      requirementAssessments: partialMustHaveAnalysis.requirementAssessments
+    });
   });
 });

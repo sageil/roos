@@ -5,7 +5,7 @@ export type EvidenceChunk = {
 };
 
 export type RequirementAssessment = {
-  category: "minimum" | "technical" | "domain" | "preferred" | "seniority";
+  category: "minimum" | "role_competency" | "domain" | "preferred" | "seniority";
   requirement: string;
   importance: "must_have" | "preferred";
   status: "met" | "partially_met" | "not_evidenced";
@@ -15,7 +15,7 @@ export type RequirementAssessment = {
 
 export type ScoreBreakdown = {
   minimumQualifications: number;
-  technicalCompetencies: number;
+  roleCompetencies: number;
   domainExperience: number;
   preferredQualifications: number;
   seniorityScope: number;

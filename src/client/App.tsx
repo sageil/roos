@@ -241,7 +241,7 @@ const ApplicationAnalysisList = ({
 const scoreBreakdownEntries = (analysis: ResumeAnalysis) => {
   return [
     ["Minimum qualifications", analysis.scoreBreakdown.minimumQualifications],
-    ["Technical competencies", analysis.scoreBreakdown.technicalCompetencies],
+    ["Role competencies", analysis.scoreBreakdown.roleCompetencies],
     ["Domain experience", analysis.scoreBreakdown.domainExperience],
     ["Preferred qualifications", analysis.scoreBreakdown.preferredQualifications],
     ["Seniority and scope", analysis.scoreBreakdown.seniorityScope],

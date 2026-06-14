@@ -96,7 +96,7 @@ const analysis: ResumeAnalysis = {
   interviewQuestions: ["How did you scale it?"],
   requirementAssessments: [
     {
-      category: "technical",
+      category: "role_competency",
       requirement: "Build TypeScript services",
       importance: "must_have",
       status: "met",
@@ -106,7 +106,7 @@ const analysis: ResumeAnalysis = {
   ],
   scoreBreakdown: {
     minimumQualifications: 88,
-    technicalCompetencies: 90,
+    roleCompetencies: 90,
     domainExperience: 80,
     preferredQualifications: 76,
     seniorityScope: 86,
