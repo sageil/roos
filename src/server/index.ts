@@ -69,8 +69,12 @@ const updateProfileBodySchema = z.object({
 
 const createJobPostingBodySchema = z.object({
   title: z.string().trim().min(2, "Job title is required.").max(180, "Job title is too long."),
-  description: z.string().trim().min(10, "Job description is required.").max(20000, "Job description is too long.")
-});
+  description: z.string().trim().min(10, "Job description is required.").max(20000, "Job description is too long."),
+  skills: z.array(z.string().trim().min(1).max(60)).max(30).default([])
+}).transform((body) => ({
+  ...body,
+  skills: Array.from(new Set(body.skills.map((skill) => skill.trim()).filter(Boolean)))
+}));
 
 type AuthenticatedRequest = express.Request & {
   user: UserRecord;
@@ -281,7 +285,8 @@ app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, r
     const jobPosting = await createJobPosting({
       createdByUserId: user.id,
       title: body.title,
-      description: body.description
+      description: body.description,
+      skills: body.skills
     });
 
     response.status(201).json({ jobPosting });

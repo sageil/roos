@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS job_postings (
   created_by_user_id BIGINT,
   title TEXT NOT NULL CHECK (length(trim(title)) >= 2),
   description TEXT NOT NULL CHECK (length(trim(description)) >= 10),
+  skills TEXT[] NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -61,6 +62,9 @@ ALTER TABLE IF EXISTS jobs
 
 ALTER TABLE IF EXISTS jobs
   ADD COLUMN IF NOT EXISTS job_posting_id BIGINT;
+
+ALTER TABLE IF EXISTS job_postings
+  ADD COLUMN IF NOT EXISTS skills TEXT[] NOT NULL DEFAULT '{}';
 
 DO $$
 BEGIN

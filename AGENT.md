@@ -16,7 +16,7 @@ Use this file as the working contract for AI agents and automation touching this
 ## Core Behavior
 
 - Users can register, log in, update profile details, upload resumes, and review their own applications and LLM analysis.
-- Admins can create job postings and review all users, postings, candidate matches, applications, and analysis status.
+- Admins have a dedicated jobs page to create job postings, enter required skills as tags, and review postings plus candidate matches.
 - Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`; keep postings separate from application/match records.
 - Resume profile uploads are versioned append-only records. Never replace or overwrite an older resume version.
 - Resume analysis chunks uploaded text, creates embeddings, stores vectors in PostgreSQL with pgvector, and ranks evidence for the LLM response.

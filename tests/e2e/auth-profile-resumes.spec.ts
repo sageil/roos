@@ -88,13 +88,21 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await expect(page.getByRole("heading", { name: "Candidate Matches" })).toBeVisible();
 
     const postingTitle = `E2E Platform Engineer ${Date.now()}`;
+    await page.getByRole("button", { name: "Add jobs" }).click();
+    await expect(page.getByRole("heading", { name: "Add job posting" })).toBeVisible();
     await page.getByPlaceholder("Backend Platform Engineer").fill(postingTitle);
+    await page.getByPlaceholder("Type a skill and press Enter").fill("TypeScript");
+    await page.getByRole("button", { name: "Add skill" }).click();
+    await page.getByPlaceholder("Type a skill and press Enter").fill("PostgreSQL");
+    await page.keyboard.press("Enter");
     await page
       .getByPlaceholder("Paste the job posting requirements, responsibilities, and qualifications.")
       .fill("Build secure TypeScript services, PostgreSQL systems, and production APIs.");
-    await page.getByRole("button", { name: "Save posting" }).click();
+    await page.getByRole("button", { name: "Publish job posting" }).click();
 
     await expect(page.getByText("Job posting saved and selected for analysis.")).toBeVisible();
-    await expect(page.locator(".admin-row").filter({ hasText: postingTitle })).toBeVisible();
+    const postingCard = page.locator(".posting-card").filter({ hasText: postingTitle });
+    await expect(postingCard).toBeVisible();
+    await expect(postingCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
   });
 });

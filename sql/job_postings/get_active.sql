@@ -3,6 +3,7 @@ SELECT
   created_by_user_id::int,
   title,
   description,
+  skills,
   status,
   created_at::text,
   updated_at::text

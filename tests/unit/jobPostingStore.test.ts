@@ -29,6 +29,7 @@ const jobPostingRow = {
   created_by_user_id: 1,
   title: "Platform Staff Engineer",
   description: "Build APIs and mentor teams.",
+  skills: ["TypeScript", "PostgreSQL"],
   status: "active" as const,
   created_at: "2026-06-14T10:00:00.000Z",
   updated_at: "2026-06-14T10:00:00.000Z",
@@ -48,19 +49,22 @@ describe("jobPostingStore", () => {
     await expect(
       createJobPosting({
         createdByUserId: 1,
-        title: "Platform Staff Engineer",
-        description: "Build APIs and mentor teams."
-      })
+      title: "Platform Staff Engineer",
+      description: "Build APIs and mentor teams.",
+      skills: ["TypeScript", "PostgreSQL"]
+    })
     ).resolves.toMatchObject({
       id: 4,
       createdByUserId: 1,
       title: "Platform Staff Engineer",
+      skills: ["TypeScript", "PostgreSQL"],
       status: "active"
     });
     expect(queryPostgres).toHaveBeenCalledWith("jobPostings.create", [
       1,
       "Platform Staff Engineer",
-      "Build APIs and mentor teams."
+      "Build APIs and mentor teams.",
+      ["TypeScript", "PostgreSQL"]
     ]);
   });
 
@@ -73,6 +77,7 @@ describe("jobPostingStore", () => {
         createdByUserId: 1,
         title: "Platform Staff Engineer",
         description: "Build APIs and mentor teams.",
+        skills: ["TypeScript", "PostgreSQL"],
         status: "active",
         createdAt: "2026-06-14T10:00:00.000Z",
         updatedAt: "2026-06-14T10:00:00.000Z",

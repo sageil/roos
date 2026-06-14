@@ -109,6 +109,7 @@ export type JobPostingRecord = {
   createdByUserId?: number;
   title: string;
   description: string;
+  skills: string[];
   status: "active" | "archived";
   createdAt: string;
   updatedAt: string;

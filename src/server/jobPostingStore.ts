@@ -7,6 +7,7 @@ type JobPostingRow = {
   created_by_user_id: number | null;
   title: string;
   description: string;
+  skills: string[];
   status: "active" | "archived";
   created_at: string;
   updated_at: string;
@@ -20,6 +21,7 @@ const mapJobPostingRow = (row: JobPostingRow): JobPostingRecord => ({
   createdByUserId: row.created_by_user_id ?? undefined,
   title: row.title,
   description: row.description,
+  skills: row.skills,
   status: row.status,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -31,16 +33,19 @@ const mapJobPostingRow = (row: JobPostingRow): JobPostingRecord => ({
 export const createJobPosting = async ({
   createdByUserId,
   title,
-  description
+  description,
+  skills
 }: {
   createdByUserId: number;
   title: string;
   description: string;
+  skills: string[];
 }): Promise<JobPostingRecord> => {
   const result = await queryPostgres<JobPostingRow>(queries.jobPostings.create, [
     createdByUserId,
     title,
-    description
+    description,
+    skills
   ]);
 
   return mapJobPostingRow(result.rows[0]);

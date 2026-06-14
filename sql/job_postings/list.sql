@@ -3,6 +3,7 @@ SELECT
   jp.created_by_user_id::int,
   jp.title,
   jp.description,
+  jp.skills,
   jp.status,
   jp.created_at::text,
   jp.updated_at::text,

@@ -254,6 +254,13 @@ const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
               <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
                 Top {posting.topFitScore ?? 0}/100
               </StatusBadge>
+              {posting.skills.length > 0 && (
+                <div className="tag-list compact-tags">
+                  {posting.skills.slice(0, 6).map((skill) => (
+                    <span className="tag-chip" key={skill}>{skill}</span>
+                  ))}
+                </div>
+              )}
               <p>{posting.description}</p>
             </article>
           ))}
@@ -305,7 +312,7 @@ export const App = () => {
   const [loginStatus, setLoginStatus] = useState<Status>("idle");
   const [loginError, setLoginError] = useState("");
   const [adminOverview, setAdminOverview] = useState<AdminOverviewResponse | null>(null);
-  const [activeView, setActiveView] = useState<"dashboard" | "profile">("dashboard");
+  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs">("dashboard");
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
@@ -323,6 +330,8 @@ export const App = () => {
   const [registeredUser, setRegisteredUser] = useState<UserRecord | null>(null);
   const [newPostingTitle, setNewPostingTitle] = useState("");
   const [newPostingDescription, setNewPostingDescription] = useState("");
+  const [newPostingSkill, setNewPostingSkill] = useState("");
+  const [newPostingSkills, setNewPostingSkills] = useState<string[]>([]);
   const [postingStatus, setPostingStatus] = useState<Status>("idle");
   const [postingError, setPostingError] = useState("");
 
@@ -710,6 +719,21 @@ export const App = () => {
     }
   };
 
+  const addPostingSkill = () => {
+    const skill = newPostingSkill.trim();
+    if (!skill || newPostingSkills.includes(skill)) {
+      setNewPostingSkill("");
+      return;
+    }
+
+    setNewPostingSkills((current) => [...current, skill]);
+    setNewPostingSkill("");
+  };
+
+  const removePostingSkill = (skill: string) => {
+    setNewPostingSkills((current) => current.filter((item) => item !== skill));
+  };
+
   const createPosting = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPostingError("");
@@ -724,7 +748,8 @@ export const App = () => {
         },
         body: JSON.stringify({
           title: newPostingTitle,
-          description: newPostingDescription
+          description: newPostingDescription,
+          skills: newPostingSkills
         })
       });
       const data = await response.json();
@@ -738,6 +763,8 @@ export const App = () => {
       setSelectedJobPostingId(String(created.jobPosting.id));
       setNewPostingTitle("");
       setNewPostingDescription("");
+      setNewPostingSkills([]);
+      setNewPostingSkill("");
       setPostingStatus("success");
       await loadAdminOverview();
     } catch (caught) {
@@ -945,6 +972,12 @@ export const App = () => {
             <ClipboardList size={16} />
             Dashboard
           </button>
+          {user.role === "admin" && (
+            <button className="nav-button primary-nav" type="button" onClick={() => setActiveView("adminJobs")}>
+              <BriefcaseBusiness size={16} />
+              Add jobs
+            </button>
+          )}
           <button className="nav-button" type="button" onClick={openProfile}>
             <UserRound size={16} />
             Profile
@@ -1183,53 +1216,10 @@ export const App = () => {
           </form>
 
           {user?.role === "admin" && (
-            <>
-              <div className="section-kicker">
-                <span>Add job posting</span>
-                <StatusBadge tone={postingStatus === "loading" ? "warning" : "neutral"}>
-                  {postingStatus === "loading" ? "Saving" : "Admin"}
-                </StatusBadge>
-              </div>
-
-              <form className="form-stack" onSubmit={createPosting}>
-                <label className="field">
-                  <span>Posting title</span>
-                  <input
-                    value={newPostingTitle}
-                    onChange={(event) => setNewPostingTitle(event.target.value)}
-                    placeholder="Backend Platform Engineer"
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Posting description</span>
-                  <textarea
-                    value={newPostingDescription}
-                    onChange={(event) => setNewPostingDescription(event.target.value)}
-                    placeholder="Paste the job posting requirements, responsibilities, and qualifications."
-                  />
-                </label>
-
-                <button className="secondary-button" disabled={postingStatus === "loading"} type="submit">
-                  {postingStatus === "loading" ? <Loader2 className="spin" size={18} /> : <BriefcaseBusiness size={18} />}
-                  Save posting
-                </button>
-              </form>
-
-              {postingStatus === "success" && (
-                <div className="notice success">
-                  <CheckCircle2 size={18} />
-                  <span>Job posting saved and selected for analysis.</span>
-                </div>
-              )}
-
-              {postingStatus === "error" && (
-                <div className="notice error">
-                  <AlertCircle size={18} />
-                  <span>{postingError}</span>
-                </div>
-              )}
-            </>
+            <button className="primary-button sidebar-cta" type="button" onClick={() => setActiveView("adminJobs")}>
+              <BriefcaseBusiness size={18} />
+              Add or manage job postings
+            </button>
           )}
 
           {status === "error" && (
@@ -1243,6 +1233,147 @@ export const App = () => {
         </aside>
 
         <section className="results-column">
+          {activeView === "adminJobs" && user.role === "admin" && (
+            <div className="admin-jobs-view">
+              <section className="surface-card full admin-job-form-panel">
+                <div className="panel-heading split-heading">
+                  <div>
+                    <BriefcaseBusiness size={19} />
+                    <h2>Add job posting</h2>
+                  </div>
+                  <StatusBadge tone={postingStatus === "loading" ? "warning" : "neutral"}>
+                    {postingStatus === "loading" ? "Saving" : "Admin action"}
+                  </StatusBadge>
+                </div>
+
+                <form className="form-stack profile-form" onSubmit={createPosting}>
+                  <label className="field">
+                    <span>Posting title</span>
+                    <input
+                      value={newPostingTitle}
+                      onChange={(event) => setNewPostingTitle(event.target.value)}
+                      placeholder="Backend Platform Engineer"
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Required skills</span>
+                    <div className="tag-entry">
+                      <input
+                        value={newPostingSkill}
+                        onChange={(event) => setNewPostingSkill(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            addPostingSkill();
+                          }
+                        }}
+                        placeholder="Type a skill and press Enter"
+                      />
+                      <button className="secondary-button" type="button" onClick={addPostingSkill}>
+                        <ArrowUpRight size={16} />
+                        Add skill
+                      </button>
+                    </div>
+                  </label>
+
+                  {newPostingSkills.length > 0 && (
+                    <div className="tag-list">
+                      {newPostingSkills.map((skill) => (
+                        <button key={skill} className="tag-chip removable" type="button" onClick={() => removePostingSkill(skill)}>
+                          {skill}
+                          <XCircle size={14} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <label className="field">
+                    <span>Posting description</span>
+                    <textarea
+                      value={newPostingDescription}
+                      onChange={(event) => setNewPostingDescription(event.target.value)}
+                      placeholder="Paste the job posting requirements, responsibilities, and qualifications."
+                    />
+                  </label>
+
+                  <button className="primary-button" disabled={postingStatus === "loading"} type="submit">
+                    {postingStatus === "loading" ? <Loader2 className="spin" size={18} /> : <BriefcaseBusiness size={18} />}
+                    Publish job posting
+                  </button>
+                </form>
+
+                {postingStatus === "success" && (
+                  <div className="notice success">
+                    <CheckCircle2 size={18} />
+                    <span>Job posting saved and selected for analysis.</span>
+                  </div>
+                )}
+
+                {postingStatus === "error" && (
+                  <div className="notice error">
+                    <AlertCircle size={18} />
+                    <span>{postingError}</span>
+                  </div>
+                )}
+              </section>
+
+              <section className="surface-card full">
+                <div className="panel-heading split-heading">
+                  <div>
+                    <ClipboardList size={19} />
+                    <h2>Job postings</h2>
+                  </div>
+                  <StatusBadge>{jobPostings.length} total</StatusBadge>
+                </div>
+                <div className="posting-grid">
+                  {jobPostings.length === 0 ? (
+                    <p className="muted">No job postings yet.</p>
+                  ) : (
+                    jobPostings.map((posting) => (
+                      <article className="posting-card" key={posting.id}>
+                        <div className="posting-card-header">
+                          <div>
+                            <strong>{posting.title}</strong>
+                            <span>{posting.status} | {posting.createdAt}</span>
+                          </div>
+                          <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
+                            {posting.matchCount ?? 0} matches
+                          </StatusBadge>
+                        </div>
+                        {posting.skills.length > 0 && (
+                          <div className="tag-list">
+                            {posting.skills.map((skill) => (
+                              <span className="tag-chip" key={skill}>{skill}</span>
+                            ))}
+                          </div>
+                        )}
+                        <p>{posting.description}</p>
+                        <div className="posting-metrics">
+                          <StatusBadge>Avg {posting.averageFitScore ?? 0}/100</StatusBadge>
+                          <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
+                            Top {posting.topFitScore ?? 0}/100
+                          </StatusBadge>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            onClick={() => {
+                              setSelectedJobPostingId(String(posting.id));
+                              setActiveView("dashboard");
+                            }}
+                          >
+                            <Target size={16} />
+                            Match resume
+                          </button>
+                        </div>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
+
           {activeView === "profile" && (
             <div className="profile-grid">
               <section className="surface-card full">
