@@ -90,6 +90,11 @@ const fitTone = (score: number): "success" | "warning" | "danger" => {
   return "danger";
 };
 
+const evidenceSimilarityLabel = (score: number) => {
+  const percentage = Math.max(0, Math.min(100, Math.round(score * 100)));
+  return percentage === 0 ? "<1% similarity" : `${percentage}% similarity`;
+};
+
 const JobFitBadge = ({ job }: { job: JobRecord }) =>
   typeof job.fitScore === "number" ? (
     <StatusBadge tone={fitTone(job.fitScore)}>
@@ -1611,7 +1616,7 @@ export const App = () => {
                     <article className="evidence-card" key={chunk.id}>
                       <div>
                         <strong>Chunk {chunk.id}</strong>
-                        <span>{Math.round(chunk.score * 100)} match</span>
+                        <span>{evidenceSimilarityLabel(chunk.score)}</span>
                       </div>
                       <p>{chunk.text}</p>
                     </article>
