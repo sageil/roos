@@ -135,6 +135,32 @@ LLM_API_STYLE=chat
 
 Use `LLM_API_STYLE=chat` for LM Studio unless your local LM Studio server explicitly supports the OpenAI Responses API.
 
+For Ollama as the LLM provider, first pull a local model:
+
+```bash
+ollama pull llama3.2
+```
+
+Then use Ollama's OpenAI-compatible API outside Docker:
+
+```bash
+OPENAI_API_KEY=ollama
+OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+LLM_MODEL=llama3.2
+LLM_API_STYLE=chat
+```
+
+From Docker Compose, point the app at the host Ollama server:
+
+```bash
+OPENAI_API_KEY=ollama
+OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+LLM_MODEL=llama3.2
+LLM_API_STYLE=chat
+```
+
+Ollama ignores the API key but OpenAI-compatible clients still require one. Ollama also supports `/v1/responses` in recent versions, but `LLM_API_STYLE=chat` is the more portable default.
+
 For an OpenAI-compatible embeddings provider:
 
 ```bash
