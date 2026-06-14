@@ -40,10 +40,43 @@ x-app-common: &app-common
   restart: unless-stopped
 
 services:
+  cert-init:
+    image: smallstep/step-cli:0.30.2
+    volumes:
+      - ./data/tls:/certs
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /certs/root_ca.crt ] || [ ! -f /certs/root_ca.key ]; then
+          step certificate create "Resume Analyzer Local Root CA" /certs/root_ca.crt /certs/root_ca.key \
+            --profile root-ca \
+            --not-after 87600h \
+            --no-password \
+            --insecure \
+            --force
+        fi
+
+        step certificate create localhost /certs/server.crt /certs/server.key \
+          --profile leaf \
+          --ca /certs/root_ca.crt \
+          --ca-key /certs/root_ca.key \
+          --san localhost \
+          --san 127.0.0.1 \
+          --san resume-analyzer-web \
+          --san nginx \
+          --not-after 2160h \
+          --no-password \
+          --insecure \
+          --force
+
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "8787:8787"
+      - "8787:443"
+    volumes:
+      - ./data/tls:/etc/nginx/tls:ro
     command:
       - /bin/sh
       - -c
@@ -62,10 +95,14 @@ services:
         }
 
         server {
-          listen 8787;
+          listen 443 ssl;
           server_name _;
 
           client_max_body_size 8m;
+          ssl_certificate /etc/nginx/tls/server.crt;
+          ssl_certificate_key /etc/nginx/tls/server.key;
+          ssl_protocols TLSv1.2 TLSv1.3;
+          ssl_prefer_server_ciphers off;
 
           location = /nginx-health {
             access_log off;
@@ -87,6 +124,8 @@ services:
         EOF
         nginx -g 'daemon off;'
     depends_on:
+      cert-init:
+        condition: service_completed_successfully
       app-1:
         condition: service_healthy
       app-2:
@@ -127,7 +166,7 @@ services:
     image: mcr.microsoft.com/playwright:v1.60.0-noble
     working_dir: /app
     environment:
-      E2E_BASE_URL: http://resume-analyzer-web:8787
+      E2E_BASE_URL: https://resume-analyzer-web
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
     volumes:

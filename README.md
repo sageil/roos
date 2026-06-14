@@ -31,15 +31,23 @@ The recommended local stack runs Nginx, two app instances, and PostgreSQL with p
 docker compose up --build
 ```
 
-Open the app through the Nginx proxy at `http://localhost:8787`.
+Open the app through the Nginx proxy at `https://localhost:8787`.
 
 The public request path is:
 
 ```text
-browser -> nginx:8787 -> app-1:8787 / app-2:8787 -> postgres:5432
+browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 ```
 
-Only Nginx publishes a host port. The app instances and PostgreSQL stay on the private Compose network.
+Only Nginx publishes a host port, and it publishes HTTPS only. The app instances and PostgreSQL stay on the private Compose network.
+
+Compose uses a one-shot Smallstep CLI container to generate a local development root CA and Nginx server certificate in `data/tls/`. That directory is ignored by Git.
+
+To trust the local development certificate in your browser, install the generated root CA:
+
+```bash
+step certificate install data/tls/root_ca.crt
+```
 
 Compose persists:
 
@@ -129,7 +137,7 @@ LLM_MODEL=your-chat-model
 pnpm dev
 ```
 
-The app runs at `http://localhost:5173` and the API at `http://localhost:8787`.
+The Vite dev server runs at `http://localhost:5173` for local frontend iteration. The Docker app entrypoint runs at `https://localhost:8787`.
 
 ## Verification
 
@@ -145,4 +153,4 @@ The Docker-backed E2E flow starts the proxied app stack and runs Playwright in a
 pnpm e2e:docker
 ```
 
-The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `http://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.
+The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `https://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.

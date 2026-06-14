@@ -10,7 +10,8 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: process.env.E2E_BASE_URL || "http://127.0.0.1:8787",
+    baseURL: process.env.E2E_BASE_URL || "https://127.0.0.1:8787",
+    ignoreHTTPSErrors: true,
     trace: "retain-on-failure",
     screenshot: "only-on-failure"
   },
