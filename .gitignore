@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+dist/
+data/
+.env
+.DS_Store
+npm-debug.log*
+playwright-report/
+test-results/
+blob-report/
+coverage/
