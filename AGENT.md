@@ -7,7 +7,8 @@ Use this file as the working contract for AI agents and automation touching this
 - Stack: TypeScript, React, Vite, Node/Express, PostgreSQL, pgvector, OpenAI-compatible APIs.
 - Package manager: pnpm only. Do not add npm or yarn lockfiles.
 - Runtime target: Docker Compose is the preferred local environment.
-- App URL in Docker: `http://localhost:8787`.
+- App URL in Docker: `http://localhost:8787` through Nginx.
+- Docker topology: `nginx` is the only public service; it load balances to `app-1` and `app-2` on the private Compose network.
 - Local dev URLs: Vite at `http://localhost:5173`, API at `http://localhost:8787`.
 
 ## Core Behavior
@@ -94,6 +95,7 @@ The containerized commands should be preferred when validating changes for hando
 - Keep coverage thresholds meaningful. Do not lower thresholds to hide untested behavior.
 - Mock PostgreSQL for unit tests; use Docker Compose for full app/E2E validation.
 - Add E2E coverage for user-visible auth, profile, resume upload/versioning, admin, and application flows.
+- Docker E2E should target the Nginx proxy alias `resume-analyzer-web`, not an individual app instance.
 
 ## UI Notes
 
@@ -106,6 +108,7 @@ The containerized commands should be preferred when validating changes for hando
 
 - Do not commit `.env`, local data directories, build output, coverage output, or dependency caches.
 - PostgreSQL should stay internal to Docker Compose unless a task explicitly requires host exposure.
+- App containers should stay internal to Docker Compose; publish traffic through Nginx.
 - Keep the app using the restricted `APP_DB_USER`; do not connect the app as the Postgres superuser.
 - Preserve hashed sessions and scrypt password hashing.
 - Do not log secrets, bearer tokens, passwords, raw provider API keys, or full resume text unnecessarily.

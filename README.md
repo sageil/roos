@@ -25,13 +25,21 @@ Edit `.env` with your provider settings.
 
 ## Docker Compose
 
-The recommended local stack runs the app and PostgreSQL with pgvector together:
+The recommended local stack runs Nginx, two app instances, and PostgreSQL with pgvector together:
 
 ```bash
 docker compose up --build
 ```
 
-Open the app at `http://localhost:8787`.
+Open the app through the Nginx proxy at `http://localhost:8787`.
+
+The public request path is:
+
+```text
+browser -> nginx:8787 -> app-1:8787 / app-2:8787 -> postgres:5432
+```
+
+Only Nginx publishes a host port. The app instances and PostgreSQL stay on the private Compose network.
 
 Compose persists:
 
@@ -40,7 +48,7 @@ Compose persists:
 
 PostgreSQL is only exposed inside the Docker network. The app connects with the restricted `APP_DB_USER` role; the bootstrap admin password is only supplied to the database container.
 
-When the app runs in Docker, it connects to:
+When the app instances run in Docker, they connect to:
 
 ```bash
 APP_DB_USER=<set in .env>
@@ -131,7 +139,7 @@ pnpm build
 pnpm e2e:docker
 ```
 
-The Docker-backed E2E flow starts the app stack and runs Playwright in a test container:
+The Docker-backed E2E flow starts the proxied app stack and runs Playwright in a test container:
 
 ```bash
 pnpm e2e:docker

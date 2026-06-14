@@ -10,11 +10,23 @@ const pool = new Pool({
 });
 
 let initialized: Promise<void> | undefined;
+const migrationLockId = 23078787;
 
 export const initPostgres = async () => {
   initialized ??= (async () => {
-    for (const migration of queries.migrations) {
-      await pool.query(migration);
+    const client = await pool.connect();
+    let locked = false;
+    try {
+      await client.query(queries.transactions.advisoryLock, [migrationLockId]);
+      locked = true;
+      for (const migration of queries.migrations) {
+        await client.query(migration);
+      }
+    } finally {
+      if (locked) {
+        await client.query(queries.transactions.advisoryUnlock, [migrationLockId]);
+      }
+      client.release();
     }
   })();
 

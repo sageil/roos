@@ -50,6 +50,8 @@ export const queries = {
     match: loadSql("resume_chunks", "match.sql")
   },
   transactions: {
+    advisoryLock: loadSql("transactions", "advisory_lock.sql"),
+    advisoryUnlock: loadSql("transactions", "advisory_unlock.sql"),
     begin: loadSql("transactions", "begin.sql"),
     commit: loadSql("transactions", "commit.sql"),
     rollback: loadSql("transactions", "rollback.sql")
