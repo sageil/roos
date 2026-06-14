@@ -4,6 +4,29 @@ export type EvidenceChunk = {
   score: number;
 };
 
+export type RequirementAssessment = {
+  category: "minimum" | "technical" | "domain" | "preferred" | "seniority";
+  requirement: string;
+  importance: "must_have" | "preferred";
+  status: "met" | "partially_met" | "not_evidenced";
+  evidence: string[];
+  rationale: string;
+};
+
+export type ScoreBreakdown = {
+  minimumQualifications: number;
+  technicalCompetencies: number;
+  domainExperience: number;
+  preferredQualifications: number;
+  seniorityScope: number;
+  evidenceQuality: number;
+};
+
+export type FairnessReview = {
+  ignoredFactors: string[];
+  notes: string[];
+};
+
 export type AnalysisRequestMeta = {
   applicationDate: string;
   jobTitle: string;
@@ -21,6 +44,9 @@ export type ResumeAnalysis = {
   recommendations: string[];
   suggestedKeywords: string[];
   interviewQuestions: string[];
+  requirementAssessments?: RequirementAssessment[];
+  scoreBreakdown?: ScoreBreakdown;
+  fairnessReview?: FairnessReview;
   evidence: EvidenceChunk[];
 };
 

@@ -20,6 +20,7 @@ Use this file as the working contract for AI agents and automation touching this
 - Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`; keep postings separate from application/match records.
 - Resume profile uploads are versioned append-only records. Never replace or overwrite an older resume version.
 - Resume analysis chunks uploaded text, creates embeddings, stores vectors in PostgreSQL with pgvector, and ranks evidence for the LLM response.
+- LLM analysis is structured for HR review: requirement assessment, score breakdown, fairness review, strengths, gaps, risks, recommendations, keywords, and interview questions.
 - Sessions store hashed bearer tokens only.
 - Passwords are hashed with scrypt.
 

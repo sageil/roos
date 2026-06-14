@@ -24,6 +24,28 @@ const seededAnalysis: ResumeAnalysis = {
   recommendations: ["Add PostgreSQL metrics", "Emphasize production API ownership"],
   suggestedKeywords: ["TypeScript", "PostgreSQL", "REST APIs"],
   interviewQuestions: ["Which API decisions improved reliability?"],
+  requirementAssessments: [
+    {
+      category: "technical",
+      requirement: "Build secure TypeScript services",
+      importance: "must_have",
+      status: "met",
+      evidence: ["Built secure TypeScript APIs"],
+      rationale: "The resume directly supports secure TypeScript service delivery."
+    }
+  ],
+  scoreBreakdown: {
+    minimumQualifications: 84,
+    technicalCompetencies: 88,
+    domainExperience: 76,
+    preferredQualifications: 70,
+    seniorityScope: 82,
+    evidenceQuality: 86
+  },
+  fairnessReview: {
+    ignoredFactors: ["name", "address"],
+    notes: ["The assessment ignored identity and location clues."]
+  },
   evidence: [{ id: 1, text: "REST API delivery evidence with PostgreSQL ownership.", score: 0.84 }]
 };
 
@@ -181,7 +203,12 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     const application = page.locator(".application-card").filter({ hasText: jobTitle });
     await expect(application).toBeVisible();
     await expect(application.getByText("Candidate summary")).toBeVisible();
-    await expect(application.getByText("Built secure TypeScript APIs")).toBeVisible();
+    await expect(application.getByText("HR Score Breakdown")).toBeVisible();
+    await expect(application.getByText("Requirement Assessment")).toBeVisible();
+    await expect(application.getByText("Build secure TypeScript services", { exact: true })).toBeVisible();
+    await expect(application.getByText("Fairness Review")).toBeVisible();
+    await expect(application.getByText("The assessment ignored identity and location clues.")).toBeVisible();
+    await expect(application.getByText("Built secure TypeScript APIs").first()).toBeVisible();
     await expect(application.getByText("Missing Kubernetes deployment depth")).toBeVisible();
     await expect(application.getByText("Add PostgreSQL metrics", { exact: true })).toBeVisible();
     await expect(application.getByText("Ranked evidence")).toBeVisible();

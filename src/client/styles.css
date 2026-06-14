@@ -1120,6 +1120,81 @@ h1 {
   justify-self: start;
 }
 
+.score-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.score-breakdown-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fffaf5;
+}
+
+.score-breakdown-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.score-breakdown-item strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.requirement-assessment-list {
+  display: grid;
+  gap: 9px;
+}
+
+.requirement-assessment-row {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-soft);
+}
+
+.requirement-assessment-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.requirement-assessment-row strong {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.requirement-assessment-row span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.requirement-assessment-row p,
+.requirement-assessment-row li {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.requirement-assessment-row ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
 .surface-card,
 .score-panel,
 .metric-tile {
@@ -1331,7 +1406,8 @@ h1 {
   .empty-grid,
   .admin-grid,
   .application-meta-grid,
-  .application-analysis-grid {
+  .application-analysis-grid,
+  .score-breakdown-grid {
     grid-template-columns: 1fr;
   }
 

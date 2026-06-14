@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import type { EvidenceChunk, ResumeAnalysis } from "../shared/types.js";
+import type { EvidenceChunk, FairnessReview, RequirementAssessment, ResumeAnalysis, ScoreBreakdown } from "../shared/types.js";
 import { chunkResumeText } from "./chunking.js";
 import { config } from "./config.js";
 import { cosineSimilarity, createEmbeddings } from "./embeddings.js";
@@ -16,10 +16,80 @@ const analysisSchema = z.object({
   risks: z.array(z.string()).default([]),
   recommendations: z.array(z.string()).default([]),
   suggestedKeywords: z.array(z.string()).default([]),
-  interviewQuestions: z.array(z.string()).default([])
+  interviewQuestions: z.array(z.string()).default([]),
+  requirementAssessments: z.array(z.object({
+    category: z.enum(["minimum", "technical", "domain", "preferred", "seniority"]),
+    requirement: z.string(),
+    importance: z.enum(["must_have", "preferred"]),
+    status: z.enum(["met", "partially_met", "not_evidenced"]),
+    evidence: z.array(z.string()).default([]),
+    rationale: z.string()
+  })).default([]),
+  scoreBreakdown: z.object({
+    minimumQualifications: z.number().min(0).max(100),
+    technicalCompetencies: z.number().min(0).max(100),
+    domainExperience: z.number().min(0).max(100),
+    preferredQualifications: z.number().min(0).max(100),
+    seniorityScope: z.number().min(0).max(100),
+    evidenceQuality: z.number().min(0).max(100)
+  }).optional(),
+  fairnessReview: z.object({
+    ignoredFactors: z.array(z.string()).default([]),
+    notes: z.array(z.string()).default([])
+  }).optional()
 });
 
-const analysisCacheVersion = "2026-06-14-deterministic-rubric-v1";
+const analysisCacheVersion = "2026-06-14-hr-structured-rubric-v1";
+
+const stringArraySchema = {
+  type: "array",
+  items: { type: "string" }
+};
+
+const requirementAssessmentSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["category", "requirement", "importance", "status", "evidence", "rationale"],
+  properties: {
+    category: { type: "string", enum: ["minimum", "technical", "domain", "preferred", "seniority"] },
+    requirement: { type: "string" },
+    importance: { type: "string", enum: ["must_have", "preferred"] },
+    status: { type: "string", enum: ["met", "partially_met", "not_evidenced"] },
+    evidence: stringArraySchema,
+    rationale: { type: "string" }
+  }
+};
+
+const scoreBreakdownSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "minimumQualifications",
+    "technicalCompetencies",
+    "domainExperience",
+    "preferredQualifications",
+    "seniorityScope",
+    "evidenceQuality"
+  ],
+  properties: {
+    minimumQualifications: { type: "number", minimum: 0, maximum: 100 },
+    technicalCompetencies: { type: "number", minimum: 0, maximum: 100 },
+    domainExperience: { type: "number", minimum: 0, maximum: 100 },
+    preferredQualifications: { type: "number", minimum: 0, maximum: 100 },
+    seniorityScope: { type: "number", minimum: 0, maximum: 100 },
+    evidenceQuality: { type: "number", minimum: 0, maximum: 100 }
+  }
+};
+
+const fairnessReviewSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ignoredFactors", "notes"],
+  properties: {
+    ignoredFactors: stringArraySchema,
+    notes: stringArraySchema
+  }
+};
 
 const analysisResponseFormat = {
   type: "json_schema" as const,
@@ -38,18 +108,27 @@ const analysisResponseFormat = {
         "risks",
         "recommendations",
         "suggestedKeywords",
-        "interviewQuestions"
+        "interviewQuestions",
+        "requirementAssessments",
+        "scoreBreakdown",
+        "fairnessReview"
       ],
       properties: {
         candidateSummary: { type: "string" },
         fitScore: { type: "number", minimum: 0, maximum: 100 },
         fitLevel: { type: "string", enum: ["low", "medium", "high"] },
-        strengths: { type: "array", items: { type: "string" } },
-        gaps: { type: "array", items: { type: "string" } },
-        risks: { type: "array", items: { type: "string" } },
-        recommendations: { type: "array", items: { type: "string" } },
-        suggestedKeywords: { type: "array", items: { type: "string" } },
-        interviewQuestions: { type: "array", items: { type: "string" } }
+        strengths: stringArraySchema,
+        gaps: stringArraySchema,
+        risks: stringArraySchema,
+        recommendations: stringArraySchema,
+        suggestedKeywords: stringArraySchema,
+        interviewQuestions: stringArraySchema,
+        requirementAssessments: {
+          type: "array",
+          items: requirementAssessmentSchema
+        },
+        scoreBreakdown: scoreBreakdownSchema,
+        fairnessReview: fairnessReviewSchema
       }
     }
   }
@@ -156,14 +235,14 @@ const rankEvidence = async (
 };
 
 const systemPrompt =
-  "You are a resume-to-job-fit analyst for the candidate. Return only concise JSON. Evaluate how well the uploaded resume matches the target job profile using the scoring rubric exactly. Be specific, evidence-based, consistent, and fair. Do not write advice for an interviewer or recruiter. Do not invent credentials.";
+  "You are an HR talent assessment analyst supporting structured resume screening. Return only concise JSON. Evaluate the resume against job-related competencies, minimum qualifications, technical/domain requirements, preferred qualifications, and seniority/scope. Use only job-relevant evidence in the resume. Do not infer or use protected traits or demographic proxies such as name, age, address, gender, race, ethnicity, religion, disability, family status, nationality, school prestige, hobbies, or cultural markers. Do not make a hiring decision; provide a structured assessment for human review. Do not invent credentials.";
 
 const userPrompt = (
   jobTitle: string,
   jobDescription: string | undefined,
   resumeText: string,
   evidence: EvidenceChunk[]
-) => `Analyze this resume for the job title.
+) => `Perform a structured HR resume screen for this job profile.
 
 Job title:
 ${jobTitle}
@@ -171,19 +250,25 @@ ${jobTitle}
 Job description:
 ${jobDescription?.trim() || "Not provided. Infer expected qualifications from the target role."}
 
-Top resume evidence selected by embedding similarity:
+Top resume evidence selected by semantic retrieval:
 ${evidence.map((chunk) => `[chunk ${chunk.id}, score ${chunk.score}]\n${chunk.text}`).join("\n\n")}
 
 Full resume text:
 ${resumeText.slice(0, 18000)}
 
 Scoring rubric:
-- 90-100: exceptional fit; nearly all important requirements are directly evidenced and seniority/scope align.
-- 80-89: strong fit; most important requirements are directly evidenced, with only limited gaps.
-- 60-79: partial fit; some important requirements are evidenced, but material gaps or seniority/scope mismatches remain.
-- 40-59: weak fit; only adjacent experience is evidenced or several core requirements are missing.
+- First identify the job-related assessment criteria from the job profile.
+- Separate criteria into minimum qualifications, required technical competencies, required domain/industry experience, preferred qualifications, and seniority/scope expectations.
+- Evaluate each criterion using only resume evidence. If a requirement is not directly supported, mark it not_evidenced.
+- Treat must-have requirements as materially more important than preferred qualifications.
+- 90-100: exceptional fit; all or nearly all must-have requirements are directly evidenced, seniority/scope align, and preferred qualifications are strong.
+- 80-89: strong fit; most must-have requirements are directly evidenced, no major minimum-qualification gaps, and only limited preferred/scope gaps remain.
+- 60-79: partial fit; some must-have requirements are evidenced, but material gaps, weak evidence, or seniority/scope mismatches remain.
+- 40-59: weak fit; only adjacent experience is evidenced or several core must-have requirements are missing.
 - 0-39: poor fit; little direct evidence supports the target job profile.
-Use the same score for the same resume and job profile. Do not reward years of experience unless the experience directly supports the job profile.
+- Do not reward years of experience unless the experience directly supports the job profile.
+- Do not penalize or reward protected traits, identity markers, address/location clues, names, school prestige, hobbies, or cultural markers unless explicitly job-required and legally relevant.
+- Use the same score for the same resume and job profile.
 
 Return JSON with exactly these keys:
 candidateSummary: string, summarize resume-to-job-profile fitness and the main reason for the score
@@ -194,7 +279,10 @@ gaps: string[], important job requirements not clearly supported by the resume
 risks: string[]
 recommendations: string[], candidate-facing resume or positioning changes to improve fit for this job profile
 suggestedKeywords: string[], missing or under-emphasized job-profile keywords the candidate can truthfully add
-interviewQuestions: string[], questions a hiring team might ask to verify claimed fit`;
+interviewQuestions: string[], questions a hiring team might ask to verify claimed fit
+requirementAssessments: array of requirement assessments with category, requirement, importance, status, evidence, and rationale
+scoreBreakdown: object with minimumQualifications, technicalCompetencies, domainExperience, preferredQualifications, seniorityScope, and evidenceQuality scores from 0 to 100
+fairnessReview: object with ignoredFactors and notes explaining which non-job-related factors were ignored`;
 
 const analyzeWithResponsesApi = async (prompt: string): Promise<string> => {
   const client = createLlmClient();
@@ -240,10 +328,27 @@ const normalizeAnalysis = (
   evidence: EvidenceChunk[]
 ): ResumeAnalysis => {
   const fitScore = Math.round(analysis.fitScore);
+  const requirementAssessments: RequirementAssessment[] = analysis.requirementAssessments ?? [];
+  const scoreBreakdown: ScoreBreakdown = analysis.scoreBreakdown ?? {
+    minimumQualifications: fitScore,
+    technicalCompetencies: fitScore,
+    domainExperience: fitScore,
+    preferredQualifications: fitScore,
+    seniorityScope: fitScore,
+    evidenceQuality: fitScore
+  };
+  const fairnessReview: FairnessReview = analysis.fairnessReview ?? {
+    ignoredFactors: [],
+    notes: ["Legacy analysis did not include a structured fairness review."]
+  };
+
   return {
     ...analysis,
     fitScore,
     fitLevel: fitLevelForScore(fitScore),
+    requirementAssessments,
+    scoreBreakdown,
+    fairnessReview,
     evidence
   };
 };

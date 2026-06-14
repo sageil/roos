@@ -238,12 +238,112 @@ const ApplicationAnalysisList = ({
   );
 };
 
+const scoreBreakdownEntries = (analysis: ResumeAnalysis) => {
+  if (!analysis.scoreBreakdown) {
+    return [];
+  }
+
+  return [
+    ["Minimum qualifications", analysis.scoreBreakdown.minimumQualifications],
+    ["Technical competencies", analysis.scoreBreakdown.technicalCompetencies],
+    ["Domain experience", analysis.scoreBreakdown.domainExperience],
+    ["Preferred qualifications", analysis.scoreBreakdown.preferredQualifications],
+    ["Seniority and scope", analysis.scoreBreakdown.seniorityScope],
+    ["Evidence quality", analysis.scoreBreakdown.evidenceQuality]
+  ] as const;
+};
+
+const HREvaluationDetails = ({
+  analysis,
+  compact = false
+}: {
+  analysis: ResumeAnalysis;
+  compact?: boolean;
+}) => {
+  const scoreEntries = scoreBreakdownEntries(analysis);
+  const sectionClass = compact ? "application-detail-block application-summary-block" : "surface-card full";
+
+  return (
+    <>
+      {scoreEntries.length > 0 && (
+        <section className={sectionClass}>
+          <div className="panel-heading">
+            <ClipboardList size={19} />
+            <h2>HR Score Breakdown</h2>
+          </div>
+          <div className="score-breakdown-grid">
+            {scoreEntries.map(([label, value]) => (
+              <div className="score-breakdown-item" key={label}>
+                <span>{label}</span>
+                <strong>{Math.round(value)}/100</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {analysis.requirementAssessments && analysis.requirementAssessments.length > 0 && (
+        <section className={sectionClass}>
+          <div className="panel-heading">
+            <CheckCircle2 size={19} />
+            <h2>Requirement Assessment</h2>
+          </div>
+          <div className="requirement-assessment-list">
+            {analysis.requirementAssessments.map((item) => (
+              <article className="requirement-assessment-row" key={`${item.category}-${item.requirement}`}>
+                <div>
+                  <strong>{item.requirement}</strong>
+                  <span>{item.category} | {item.importance} | {item.status}</span>
+                </div>
+                <p>{item.rationale}</p>
+                {item.evidence.length > 0 && (
+                  <ul>
+                    {item.evidence.map((evidenceItem) => (
+                      <li key={evidenceItem}>{evidenceItem}</li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {analysis.fairnessReview && (
+        <section className={sectionClass}>
+          <div className="panel-heading">
+            <ShieldCheck size={19} />
+            <h2>Fairness Review</h2>
+          </div>
+          {analysis.fairnessReview.ignoredFactors.length > 0 && (
+            <div className="tag-list">
+              {analysis.fairnessReview.ignoredFactors.map((factor) => (
+                <span className="tag-chip" key={factor}>{factor}</span>
+              ))}
+            </div>
+          )}
+          {analysis.fairnessReview.notes.length > 0 ? (
+            <ul className="item-list">
+              {analysis.fairnessReview.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No fairness notes returned.</p>
+          )}
+        </section>
+      )}
+    </>
+  );
+};
+
 const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) => (
   <div className="application-analysis-grid">
     <section className="application-detail-block application-summary-block">
       <h3>Candidate summary</h3>
       <p>{analysis.candidateSummary}</p>
     </section>
+    <HREvaluationDetails analysis={analysis} compact />
     <ApplicationAnalysisList title="Strengths" items={analysis.strengths} />
     <ApplicationAnalysisList title="Gaps" items={analysis.gaps} />
     <ApplicationAnalysisList title="Risks" items={analysis.risks} />
@@ -1781,6 +1881,8 @@ export const App = () => {
                 value={result.job.status}
                 caption={result.job.updatedAt}
               />
+
+              <HREvaluationDetails analysis={result.analysis} />
 
               <ListBlock
                 title="Strengths"

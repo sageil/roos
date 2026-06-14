@@ -12,7 +12,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
-- Generates a structured analysis with fit score, strengths, gaps, risks, and prioritized recommendations.
+- Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
 
 ## Setup
 

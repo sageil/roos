@@ -77,7 +77,29 @@ const llmAnalysis = {
   risks: [],
   recommendations: ["Add deployment details"],
   suggestedKeywords: ["PostgreSQL"],
-  interviewQuestions: ["How did you improve reliability?"]
+  interviewQuestions: ["How did you improve reliability?"],
+  requirementAssessments: [
+    {
+      category: "technical",
+      requirement: "Build TypeScript services",
+      importance: "must_have",
+      status: "met",
+      evidence: ["Built secure TypeScript APIs"],
+      rationale: "The resume directly describes TypeScript API delivery."
+    }
+  ],
+  scoreBreakdown: {
+    minimumQualifications: 80,
+    technicalCompetencies: 84,
+    domainExperience: 70,
+    preferredQualifications: 60,
+    seniorityScope: 75,
+    evidenceQuality: 78
+  },
+  fairnessReview: {
+    ignoredFactors: ["name", "address"],
+    notes: ["Only job-related resume evidence was considered."]
+  }
 };
 
 describe("analyzeResume", () => {
@@ -124,6 +146,15 @@ describe("analyzeResume", () => {
         candidateSummary: "Cached summary",
         fitScore: 75,
         fitLevel: "medium",
+        requirementAssessments: [],
+        scoreBreakdown: {
+          minimumQualifications: 75,
+          technicalCompetencies: 75,
+          domainExperience: 75,
+          preferredQualifications: 75,
+          seniorityScope: 75,
+          evidenceQuality: 75
+        },
         evidence: [{ id: 1, text: "fresh evidence", score: 0.7 }]
       },
       chunkCount: 1
@@ -157,6 +188,9 @@ describe("analyzeResume", () => {
       candidateSummary: "Fresh summary",
       fitScore: 79,
       fitLevel: "medium",
+      requirementAssessments: llmAnalysis.requirementAssessments,
+      scoreBreakdown: llmAnalysis.scoreBreakdown,
+      fairnessReview: llmAnalysis.fairnessReview,
       evidence: [{ id: 1, text: "fresh evidence", score: 0.7 }]
     });
     expect(upsertCachedAnalysis).toHaveBeenCalledWith(
