@@ -92,6 +92,8 @@ The app creates the `vector` extension and required tables on startup.
 Database SQL is kept outside the TypeScript store:
 
 - `sql/migrations/001_init.sql` creates the pgvector extension, tables, indexes, and `match_resume_chunks(...)`.
+- `sql/migrations/002_analysis_cache.sql` creates the repeat-analysis cache for identical resume/job/model inputs.
+- `sql/analysis_cache/*.sql` contains cached analysis lookup and upsert queries.
 - `sql/jobs/*.sql` contains job CRUD queries.
 - `sql/users/*.sql` and `sql/sessions/*.sql` contain account, role, and session queries.
 - `sql/resume_versions/*.sql` contains versioned profile resume upload queries.
@@ -108,6 +110,8 @@ ADMIN_PASSWORD=ChangeThisAdminPassword123
 Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview` and the admin overview in the UI.
 
 Admins can create reusable job postings from the dedicated Admin Jobs page. Each posting includes required skills as tags. Users and admins can then select a posting when analyzing a resume; the resulting candidate match is linked to that posting and visible in the admin candidate-match overview.
+
+Repeated analyses for the same normalized resume text, job title, job description, LLM model, and embedding model reuse the cached structured analysis. Each application still gets its own job row and evidence chunks, but the fit score and recommendation remain consistent for identical inputs.
 
 For OpenAI:
 

@@ -50,6 +50,10 @@ export const queries = {
   admin: {
     stats: loadSql("admin", "stats.sql")
   },
+  analysisCache: {
+    get: loadSql("analysis_cache", "get.sql"),
+    upsert: loadSql("analysis_cache", "upsert.sql")
+  },
   resumeChunks: {
     upsert: loadSql("resume_chunks", "upsert.sql"),
     match: loadSql("resume_chunks", "match.sql")

@@ -23,6 +23,10 @@ vi.mock("../../src/server/database.js", () => ({
 
 vi.mock("../../src/server/sql.js", () => ({
   queries: {
+    analysisCache: {
+      get: "analysisCache.get",
+      upsert: "analysisCache.upsert"
+    },
     jobs: {
       complete: "jobs.complete",
       create: "jobs.create",
@@ -47,10 +51,12 @@ import {
   completeJob,
   createJob,
   failJob,
+  getCachedAnalysis,
   getJob,
   listJobs,
   queryJobEvidence,
-  storeResumeChunks
+  storeResumeChunks,
+  upsertCachedAnalysis
 } from "../../src/server/postgresStore.js";
 
 const jobRow = {
@@ -207,6 +213,53 @@ describe("postgresStore", () => {
         id: 12,
         analysis
       })
+    ]);
+  });
+
+  it("gets cached analysis by key", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{
+        cache_key: "cache-key",
+        resume_hash: "resume-hash",
+        job_profile_hash: "profile-hash",
+        llm_model: "local-llm",
+        embedding_model: "embedding-model",
+        analysis_json: JSON.stringify(analysis),
+        chunk_count: 4,
+        created_at: "2026-06-14T12:00:00.000Z",
+        updated_at: "2026-06-14T12:05:00.000Z"
+      }]
+    });
+
+    await expect(getCachedAnalysis("cache-key")).resolves.toMatchObject({
+      cacheKey: "cache-key",
+      resumeHash: "resume-hash",
+      jobProfileHash: "profile-hash",
+      analysis,
+      chunkCount: 4
+    });
+    expect(queryPostgres).toHaveBeenCalledWith("analysisCache.get", ["cache-key"]);
+  });
+
+  it("upserts cached analysis with model metadata", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await upsertCachedAnalysis({
+      cacheKey: "cache-key",
+      resumeHash: "resume-hash",
+      jobProfileHash: "profile-hash",
+      analysis,
+      chunkCount: 4
+    });
+
+    expect(queryPostgres).toHaveBeenCalledWith("analysisCache.upsert", [
+      "cache-key",
+      "resume-hash",
+      "profile-hash",
+      "local-llm",
+      "text-embedding-nomic-embed-text-v1.5-embedding",
+      JSON.stringify(analysis),
+      4
     ]);
   });
 

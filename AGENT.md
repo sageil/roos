@@ -35,6 +35,7 @@ Use this file as the working contract for AI agents and automation touching this
 
 - PostgreSQL is the source of truth for users, sessions, jobs, resume versions, analysis metadata, and embeddings.
 - pgvector is used for embedding storage and matching.
+- Identical normalized resume/job/model analysis inputs are cached in PostgreSQL to keep repeat fit scores and recommendations consistent.
 - Keep SQL out of TypeScript business logic. Use SQL files under `sql/`.
 - Migrations live in `sql/migrations/`.
 - Query files are grouped by domain:
@@ -44,6 +45,7 @@ Use this file as the working contract for AI agents and automation touching this
   - `sql/sessions/`
   - `sql/resume_versions/`
   - `sql/resume_chunks/`
+  - `sql/analysis_cache/`
   - `sql/admin/`
 - If adding or changing database behavior, update the relevant SQL file and add focused tests around the TypeScript mapping and call contract.
 

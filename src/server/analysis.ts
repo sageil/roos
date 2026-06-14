@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import type { EvidenceChunk, ResumeAnalysis } from "../shared/types.js";
 import { chunkResumeText } from "./chunking.js";
 import { config } from "./config.js";
 import { cosineSimilarity, createEmbeddings } from "./embeddings.js";
 import { createLlmClient } from "./openaiClients.js";
-import { queryJobEvidence, storeResumeChunks } from "./postgresStore.js";
+import { getCachedAnalysis, queryJobEvidence, storeResumeChunks, upsertCachedAnalysis } from "./postgresStore.js";
 
 const analysisSchema = z.object({
   candidateSummary: z.string(),
@@ -17,6 +18,8 @@ const analysisSchema = z.object({
   suggestedKeywords: z.array(z.string()).default([]),
   interviewQuestions: z.array(z.string()).default([])
 });
+
+const analysisCacheVersion = "2026-06-14-deterministic-rubric-v1";
 
 const analysisResponseFormat = {
   type: "json_schema" as const,
@@ -63,6 +66,40 @@ const extractJson = (text: string): unknown => {
     }
     return JSON.parse(match[0]);
   }
+};
+
+const normalizeForCache = (value: string | undefined): string =>
+  (value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const sha256 = (value: string): string =>
+  createHash("sha256").update(value).digest("hex");
+
+const buildAnalysisCacheIdentity = (
+  resumeText: string,
+  jobTitle: string,
+  jobDescription?: string
+) => {
+  const resumeHash = sha256(normalizeForCache(resumeText));
+  const jobProfileHash = sha256(
+    JSON.stringify({
+      title: normalizeForCache(jobTitle),
+      description: normalizeForCache(jobDescription)
+    })
+  );
+  const cacheKey = sha256(
+    JSON.stringify({
+      resumeHash,
+      jobProfileHash,
+      analysisCacheVersion,
+      llmModel: config.llmModel,
+      embeddingModel: config.embeddingModel
+    })
+  );
+
+  return { cacheKey, resumeHash, jobProfileHash };
 };
 
 const buildSearchQuery = (jobTitle: string, jobDescription?: string): string => {
@@ -119,7 +156,7 @@ const rankEvidence = async (
 };
 
 const systemPrompt =
-  "You are a resume-to-job-fit analyst for the candidate. Return only concise JSON. Evaluate how well the uploaded resume matches the target job profile. Be specific, evidence-based, and fair. Do not write advice for an interviewer or recruiter. Do not invent credentials.";
+  "You are a resume-to-job-fit analyst for the candidate. Return only concise JSON. Evaluate how well the uploaded resume matches the target job profile using the scoring rubric exactly. Be specific, evidence-based, consistent, and fair. Do not write advice for an interviewer or recruiter. Do not invent credentials.";
 
 const userPrompt = (
   jobTitle: string,
@@ -140,6 +177,14 @@ ${evidence.map((chunk) => `[chunk ${chunk.id}, score ${chunk.score}]\n${chunk.te
 Full resume text:
 ${resumeText.slice(0, 18000)}
 
+Scoring rubric:
+- 90-100: exceptional fit; nearly all important requirements are directly evidenced and seniority/scope align.
+- 80-89: strong fit; most important requirements are directly evidenced, with only limited gaps.
+- 60-79: partial fit; some important requirements are evidenced, but material gaps or seniority/scope mismatches remain.
+- 40-59: weak fit; only adjacent experience is evidenced or several core requirements are missing.
+- 0-39: poor fit; little direct evidence supports the target job profile.
+Use the same score for the same resume and job profile. Do not reward years of experience unless the experience directly supports the job profile.
+
 Return JSON with exactly these keys:
 candidateSummary: string, summarize resume-to-job-profile fitness and the main reason for the score
 fitScore: number from 0 to 100
@@ -156,7 +201,9 @@ const analyzeWithResponsesApi = async (prompt: string): Promise<string> => {
   const response = await client.responses.create({
     model: config.llmModel,
     instructions: systemPrompt,
-    input: prompt
+    input: prompt,
+    temperature: 0,
+    top_p: 1
   });
 
   return response.output_text;
@@ -166,6 +213,8 @@ const analyzeWithChatCompletions = async (prompt: string): Promise<string> => {
   const client = createLlmClient();
   const response = await client.chat.completions.create({
     model: config.llmModel,
+    temperature: 0,
+    top_p: 1,
     response_format: analysisResponseFormat,
     messages: [
       { role: "system", content: systemPrompt },
@@ -174,6 +223,29 @@ const analyzeWithChatCompletions = async (prompt: string): Promise<string> => {
   });
 
   return response.choices[0]?.message.content ?? "";
+};
+
+const fitLevelForScore = (score: number): ResumeAnalysis["fitLevel"] => {
+  if (score >= 80) {
+    return "high";
+  }
+  if (score >= 60) {
+    return "medium";
+  }
+  return "low";
+};
+
+const normalizeAnalysis = (
+  analysis: Omit<ResumeAnalysis, "evidence">,
+  evidence: EvidenceChunk[]
+): ResumeAnalysis => {
+  const fitScore = Math.round(analysis.fitScore);
+  return {
+    ...analysis,
+    fitScore,
+    fitLevel: fitLevelForScore(fitScore),
+    evidence
+  };
 };
 
 export const analyzeResume = async (
@@ -190,19 +262,31 @@ export const analyzeResume = async (
     jobTitle,
     jobDescription
   );
+  const cacheIdentity = buildAnalysisCacheIdentity(resumeText, jobTitle, jobDescription);
+  const cached = await getCachedAnalysis(cacheIdentity.cacheKey);
+  if (cached) {
+    return {
+      analysis: normalizeAnalysis(cached.analysis, evidence),
+      chunkCount
+    };
+  }
+
   const prompt = userPrompt(jobTitle, jobDescription, resumeText, evidence);
   const text =
     config.llmApiStyle === "chat"
       ? await analyzeWithChatCompletions(prompt)
       : await analyzeWithResponsesApi(prompt);
   const parsed = analysisSchema.parse(extractJson(text));
+  const analysis = normalizeAnalysis(parsed, evidence);
+
+  await upsertCachedAnalysis({
+    ...cacheIdentity,
+    analysis,
+    chunkCount
+  });
 
   return {
-    analysis: {
-      ...parsed,
-      fitScore: Math.round(parsed.fitScore),
-      evidence
-    },
+    analysis,
     chunkCount
   };
 };

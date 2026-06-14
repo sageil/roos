@@ -39,6 +39,30 @@ type EvidenceRow = {
   score: number;
 };
 
+type AnalysisCacheRow = {
+  cache_key: string;
+  resume_hash: string;
+  job_profile_hash: string;
+  llm_model: string;
+  embedding_model: string;
+  analysis_json: string;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CachedAnalysis = {
+  cacheKey: string;
+  resumeHash: string;
+  jobProfileHash: string;
+  llmModel: string;
+  embeddingModel: string;
+  analysis: ResumeAnalysis;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 const vectorLiteral = (embedding: number[]) => `[${embedding.join(",")}]`;
 
 const parseAnalysis = (analysisJson: string | null): ResumeAnalysis | undefined => {
@@ -77,6 +101,25 @@ const mapRow = (row: JobRow): JobRecord => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
+
+const mapAnalysisCacheRow = (row: AnalysisCacheRow): CachedAnalysis | undefined => {
+  const analysis = parseAnalysis(row.analysis_json);
+  if (!analysis) {
+    return undefined;
+  }
+
+  return {
+    cacheKey: row.cache_key,
+    resumeHash: row.resume_hash,
+    jobProfileHash: row.job_profile_hash,
+    llmModel: row.llm_model,
+    embeddingModel: row.embedding_model,
+    analysis,
+    chunkCount: row.chunk_count,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+};
 
 export const createJob = async ({
   userId,
@@ -245,4 +288,35 @@ export const queryJobEvidence = async ({
       text: row.document,
       score: Number(row.score.toFixed(4))
     }));
+  });
+
+export const getCachedAnalysis = async (cacheKey: string): Promise<CachedAnalysis | undefined> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<AnalysisCacheRow>(queries.analysisCache.get, [cacheKey]);
+    return result.rows[0] ? mapAnalysisCacheRow(result.rows[0]) : undefined;
+  });
+
+export const upsertCachedAnalysis = async ({
+  cacheKey,
+  resumeHash,
+  jobProfileHash,
+  analysis,
+  chunkCount
+}: {
+  cacheKey: string;
+  resumeHash: string;
+  jobProfileHash: string;
+  analysis: ResumeAnalysis;
+  chunkCount: number;
+}) =>
+  withPostgres(async () => {
+    await queryPostgres(queries.analysisCache.upsert, [
+      cacheKey,
+      resumeHash,
+      jobProfileHash,
+      config.llmModel,
+      config.embeddingModel,
+      JSON.stringify(analysis),
+      chunkCount
+    ]);
   });
