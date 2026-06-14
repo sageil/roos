@@ -41,6 +41,18 @@ type EvidenceRow = {
 
 const vectorLiteral = (embedding: number[]) => `[${embedding.join(",")}]`;
 
+const parseAnalysis = (analysisJson: string | null): ResumeAnalysis | undefined => {
+  if (!analysisJson) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(analysisJson) as ResumeAnalysis;
+  } catch {
+    return undefined;
+  }
+};
+
 const mapRow = (row: JobRow): JobRecord => ({
   id: row.id,
   userId: row.user_id ?? undefined,
@@ -56,6 +68,7 @@ const mapRow = (row: JobRow): JobRecord => ({
   characterCount: row.character_count ?? undefined,
   chunkCount: row.chunk_count ?? undefined,
   llmRecommendation: row.llm_recommendation ?? undefined,
+  analysis: parseAnalysis(row.analysis_json),
   fitScore: row.fit_score ?? undefined,
   fitLevel: row.fit_level ?? undefined,
   errorMessage: row.error_message ?? undefined,

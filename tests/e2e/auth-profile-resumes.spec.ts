@@ -1,11 +1,57 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import { Client } from "pg";
+import type { ResumeAnalysis } from "../../src/shared/types";
 
 const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
 const adminPassword = process.env.ADMIN_PASSWORD || "ChangeThisAdminPassword123";
 const resumeFixture = path.resolve("tests/fixtures/resume.md");
+const seedCompletedApplicationSql = readFileSync(
+  path.resolve("tests/fixtures/seed_completed_application.sql"),
+  "utf8"
+);
 
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.round(Math.random() * 100_000)}@example.com`;
+
+const seededAnalysis: ResumeAnalysis = {
+  candidateSummary: "Candidate matches the backend role through TypeScript service delivery and database ownership.",
+  fitScore: 82,
+  fitLevel: "high",
+  strengths: ["Built secure TypeScript APIs", "Owned PostgreSQL-backed services"],
+  gaps: ["Missing Kubernetes deployment depth"],
+  risks: ["Limited enterprise Java evidence"],
+  recommendations: ["Add PostgreSQL metrics", "Emphasize production API ownership"],
+  suggestedKeywords: ["TypeScript", "PostgreSQL", "REST APIs"],
+  interviewQuestions: ["Which API decisions improved reliability?"],
+  evidence: [{ id: 1, text: "REST API delivery evidence with PostgreSQL ownership.", score: 0.84 }]
+};
+
+const seedCompletedApplication = async ({
+  userId,
+  jobTitle
+}: {
+  userId: number;
+  jobTitle: string;
+}) => {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(
+      seedCompletedApplicationSql,
+      [
+        userId,
+        jobTitle,
+        "Build secure TypeScript services and PostgreSQL-backed APIs.",
+        "seeded-resume.md",
+        "Add PostgreSQL metrics\nEmphasize production API ownership",
+        JSON.stringify(seededAnalysis)
+      ]
+    );
+  } finally {
+    await client.end();
+  }
+};
 
 test.describe.serial("resume analyzer account and profile flows", () => {
   test("requires authentication before reading applications", async ({ request }) => {
@@ -104,5 +150,41 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     const postingCard = page.locator(".posting-card").filter({ hasText: postingTitle });
     await expect(postingCard).toBeVisible();
     await expect(postingCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+  });
+
+  test("expands profile applications with stored analysis details", async ({ page, request }) => {
+    test.skip(!process.env.DATABASE_URL, "DATABASE_URL is required to seed stored applications.");
+
+    const email = uniqueEmail("e2e-application-details");
+    const password = "SecurePass123";
+    const jobTitle = `Seeded Backend Role ${Date.now()}`;
+
+    const registration = await request.post("/api/register", {
+      data: {
+        name: "Application Details User",
+        email,
+        password
+      }
+    });
+    expect(registration.status()).toBe(201);
+    const session = await registration.json();
+    await seedCompletedApplication({ userId: session.user.id, jobTitle });
+
+    await page.goto("/");
+    await page.getByPlaceholder("admin@example.com").fill(email);
+    await page.getByPlaceholder("Account password").fill(password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await page.getByRole("button", { name: "Profile" }).first().click();
+    await expect(page.getByRole("heading", { name: "My Application Details" })).toBeVisible();
+
+    const application = page.locator(".application-card").filter({ hasText: jobTitle });
+    await expect(application).toBeVisible();
+    await expect(application.getByText("Candidate summary")).toBeVisible();
+    await expect(application.getByText("Built secure TypeScript APIs")).toBeVisible();
+    await expect(application.getByText("Missing Kubernetes deployment depth")).toBeVisible();
+    await expect(application.getByText("Add PostgreSQL metrics", { exact: true })).toBeVisible();
+    await expect(application.getByText("Ranked evidence")).toBeVisible();
+    await expect(application.getByText("REST API delivery evidence with PostgreSQL ownership.")).toBeVisible();
   });
 });

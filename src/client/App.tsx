@@ -41,6 +41,7 @@ import type {
   LoginResponse,
   ProfileResponse,
   RegisterResponse,
+  ResumeAnalysis,
   ResumeVersionRecord,
   UpdateProfileResponse,
   UploadResumeResponse,
@@ -209,6 +210,60 @@ const ApplicationMeta = ({
   );
 };
 
+const ApplicationAnalysisList = ({
+  title,
+  items
+}: {
+  title: string;
+  items: string[];
+}) => {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="application-detail-block">
+      <h3>{title}</h3>
+      <ul className="application-detail-list">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) => (
+  <div className="application-analysis-grid">
+    <section className="application-detail-block application-summary-block">
+      <h3>Candidate summary</h3>
+      <p>{analysis.candidateSummary}</p>
+    </section>
+    <ApplicationAnalysisList title="Strengths" items={analysis.strengths} />
+    <ApplicationAnalysisList title="Gaps" items={analysis.gaps} />
+    <ApplicationAnalysisList title="Risks" items={analysis.risks} />
+    <ApplicationAnalysisList title="Recommendations" items={analysis.recommendations} />
+    <ApplicationAnalysisList title="Keywords" items={analysis.suggestedKeywords} />
+    <ApplicationAnalysisList title="Interview questions" items={analysis.interviewQuestions} />
+    {analysis.evidence.length > 0 && (
+      <section className="application-detail-block application-summary-block">
+        <h3>Ranked evidence</h3>
+        <div className="application-evidence-list">
+          {analysis.evidence.map((chunk) => (
+            <article className="application-evidence-row" key={chunk.id}>
+              <div>
+                <strong>Chunk {chunk.id}</strong>
+                <span>{evidenceSimilarityLabel(chunk.score)}</span>
+              </div>
+              <p>{chunk.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    )}
+  </div>
+);
+
 const ProfileApplications = ({
   jobs,
   isAdmin,
@@ -219,6 +274,10 @@ const ProfileApplications = ({
   onUseJob: (job: JobRecord) => void;
 }) => {
   const [expandedJobId, setExpandedJobId] = useState<number | null>(jobs[0]?.id ?? null);
+
+  useEffect(() => {
+    setExpandedJobId((current) => current ?? jobs[0]?.id ?? null);
+  }, [jobs]);
 
   return (
     <section className="surface-card full">
@@ -236,6 +295,7 @@ const ProfileApplications = ({
         <div className="application-list">
           {jobs.map((job) => {
             const expanded = expandedJobId === job.id;
+            const analysis = job.analysis;
             return (
               <article className={`application-card${expanded ? " expanded" : ""}`} key={job.id}>
                 <button
@@ -276,6 +336,8 @@ const ProfileApplications = ({
                       <ApplicationMeta label="Created" value={job.createdAt} />
                       <ApplicationMeta label="Updated" value={job.updatedAt} />
                     </div>
+
+                    {analysis && <ApplicationAnalysisDetails analysis={analysis} />}
 
                     {job.llmRecommendation && (
                       <section className="application-detail-block">

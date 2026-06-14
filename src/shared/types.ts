@@ -53,6 +53,7 @@ export type JobRecord = {
   characterCount?: number;
   chunkCount?: number;
   llmRecommendation?: string;
+  analysis?: ResumeAnalysis;
   fitScore?: number;
   fitLevel?: "low" | "medium" | "high";
   errorMessage?: string;

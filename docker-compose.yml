@@ -169,6 +169,7 @@ services:
       E2E_BASE_URL: https://resume-analyzer-web
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/resume_analyzer
     volumes:
       - .:/app
       - playwright_node_modules:/app/node_modules

@@ -184,6 +184,7 @@ describe("postgresStore", () => {
         characterCount: 4200,
         chunkCount: 4,
         llmRecommendation: "Strong match",
+        analysis: undefined,
         fitScore: 87,
         fitLevel: "high",
         errorMessage: undefined,
@@ -194,6 +195,19 @@ describe("postgresStore", () => {
       }
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("jobs.listAll", [50]);
+  });
+
+  it("maps stored analysis JSON onto listed jobs", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{ ...jobRow, analysis_json: JSON.stringify(analysis) }]
+    });
+
+    await expect(listJobs({ userId: 7, role: "user", limit: 10 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 12,
+        analysis
+      })
+    ]);
   });
 
   it("scopes job lists for regular users", async () => {
