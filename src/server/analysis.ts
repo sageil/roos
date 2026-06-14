@@ -18,6 +18,40 @@ const analysisSchema = z.object({
   interviewQuestions: z.array(z.string()).default([])
 });
 
+const analysisResponseFormat = {
+  type: "json_schema" as const,
+  json_schema: {
+    name: "resume_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "candidateSummary",
+        "fitScore",
+        "fitLevel",
+        "strengths",
+        "gaps",
+        "risks",
+        "recommendations",
+        "suggestedKeywords",
+        "interviewQuestions"
+      ],
+      properties: {
+        candidateSummary: { type: "string" },
+        fitScore: { type: "number", minimum: 0, maximum: 100 },
+        fitLevel: { type: "string", enum: ["low", "medium", "high"] },
+        strengths: { type: "array", items: { type: "string" } },
+        gaps: { type: "array", items: { type: "string" } },
+        risks: { type: "array", items: { type: "string" } },
+        recommendations: { type: "array", items: { type: "string" } },
+        suggestedKeywords: { type: "array", items: { type: "string" } },
+        interviewQuestions: { type: "array", items: { type: "string" } }
+      }
+    }
+  }
+};
+
 const extractJson = (text: string): unknown => {
   const trimmed = text.trim();
   try {
@@ -132,7 +166,7 @@ const analyzeWithChatCompletions = async (prompt: string): Promise<string> => {
   const client = createLlmClient();
   const response = await client.chat.completions.create({
     model: config.llmModel,
-    response_format: { type: "json_object" },
+    response_format: analysisResponseFormat,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: prompt }
