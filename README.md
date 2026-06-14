@@ -115,6 +115,26 @@ LLM_MODEL=gpt-5.5
 EMBEDDING_MODEL=text-embedding-3-small
 ```
 
+For LM Studio as the LLM provider outside Docker:
+
+```bash
+OPENAI_API_KEY=not-needed
+OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+LLM_MODEL=<your-lm-studio-chat-model>
+LLM_API_STYLE=chat
+```
+
+For LM Studio as the LLM provider from Docker Compose:
+
+```bash
+OPENAI_API_KEY=not-needed
+OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+LLM_MODEL=<your-lm-studio-chat-model>
+LLM_API_STYLE=chat
+```
+
+Use `LLM_API_STYLE=chat` for LM Studio unless your local LM Studio server explicitly supports the OpenAI Responses API.
+
 For an OpenAI-compatible embeddings provider:
 
 ```bash
