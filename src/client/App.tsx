@@ -413,6 +413,57 @@ const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) 
   </div>
 );
 
+const ApplicationDetailsBody = ({
+  job,
+  onUseJob
+}: {
+  job: JobRecord;
+  onUseJob?: (job: JobRecord) => void;
+}) => (
+  <div className="application-details">
+    <div className="application-meta-grid">
+      <ApplicationMeta label="Posting" value={job.jobPostingTitle} />
+      <ApplicationMeta label="Resume" value={job.resumeFileName} />
+      <ApplicationMeta label="Resume size" value={job.characterCount ? `${job.characterCount} chars` : undefined} />
+      <ApplicationMeta label="Evidence chunks" value={job.chunkCount} />
+      <ApplicationMeta label="LLM model" value={job.llmModel} />
+      <ApplicationMeta label="Embedding model" value={job.embeddingModel} />
+      <ApplicationMeta label="Created" value={job.createdAt} />
+      <ApplicationMeta label="Updated" value={job.updatedAt} />
+    </div>
+
+    {job.analysis && <ApplicationAnalysisDetails analysis={job.analysis} />}
+
+    {job.llmRecommendation && (
+      <section className="application-detail-block">
+        <h3>LLM recommendation</h3>
+        <p>{job.llmRecommendation}</p>
+      </section>
+    )}
+
+    {job.jobDescription && (
+      <section className="application-detail-block">
+        <h3>Job description</h3>
+        <p>{job.jobDescription}</p>
+      </section>
+    )}
+
+    {job.errorMessage && (
+      <section className="application-detail-block danger">
+        <h3>Analysis error</h3>
+        <p>{job.errorMessage}</p>
+      </section>
+    )}
+
+    {onUseJob && (
+      <button className="secondary-button application-action" type="button" onClick={() => onUseJob(job)}>
+        <Target size={16} />
+        Use for new analysis
+      </button>
+    )}
+  </div>
+);
+
 const ProfileApplications = ({
   jobs,
   isAdmin,
@@ -444,7 +495,6 @@ const ProfileApplications = ({
         <div className="application-list">
           {jobs.map((job) => {
             const expanded = expandedJobId === job.id;
-            const analysis = job.analysis;
             return (
               <article className={`application-card${expanded ? " expanded" : ""}`} key={job.id}>
                 <button
@@ -474,46 +524,7 @@ const ProfileApplications = ({
                 )}
 
                 {expanded && (
-                  <div className="application-details">
-                    <div className="application-meta-grid">
-                      <ApplicationMeta label="Posting" value={job.jobPostingTitle} />
-                      <ApplicationMeta label="Resume" value={job.resumeFileName} />
-                      <ApplicationMeta label="Resume size" value={job.characterCount ? `${job.characterCount} chars` : undefined} />
-                      <ApplicationMeta label="Evidence chunks" value={job.chunkCount} />
-                      <ApplicationMeta label="LLM model" value={job.llmModel} />
-                      <ApplicationMeta label="Embedding model" value={job.embeddingModel} />
-                      <ApplicationMeta label="Created" value={job.createdAt} />
-                      <ApplicationMeta label="Updated" value={job.updatedAt} />
-                    </div>
-
-                    {analysis && <ApplicationAnalysisDetails analysis={analysis} />}
-
-                    {job.llmRecommendation && (
-                      <section className="application-detail-block">
-                        <h3>LLM recommendation</h3>
-                        <p>{job.llmRecommendation}</p>
-                      </section>
-                    )}
-
-                    {job.jobDescription && (
-                      <section className="application-detail-block">
-                        <h3>Job description</h3>
-                        <p>{job.jobDescription}</p>
-                      </section>
-                    )}
-
-                    {job.errorMessage && (
-                      <section className="application-detail-block danger">
-                        <h3>Analysis error</h3>
-                        <p>{job.errorMessage}</p>
-                      </section>
-                    )}
-
-                    <button className="secondary-button application-action" type="button" onClick={() => onUseJob(job)}>
-                      <Target size={16} />
-                      Use for new analysis
-                    </button>
-                  </div>
+                  <ApplicationDetailsBody job={job} onUseJob={onUseJob} />
                 )}
               </article>
             );
@@ -538,118 +549,144 @@ const AdminUsersPanel = ({
   error: string;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
-}) => (
-  <section className="admin-users-view">
-    <section className="surface-card full">
-      <div className="panel-heading split-heading">
-        <div>
-          <UsersRound size={19} />
-          <h2>Users</h2>
-        </div>
-        <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
-          {status === "loading" ? "Searching" : `${users.length} shown`}
-        </StatusBadge>
-      </div>
+}) => {
+  const [expandedApplicationId, setExpandedApplicationId] = useState<number | null>(null);
 
-      <div className="admin-user-toolbar">
-        <label className="field">
-          <span>Search users, skills, jobs, resumes, and match evidence</span>
-          <div className="input-with-icon">
-            <Search size={18} />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="TypeScript, Java, PostgreSQL, product manager..."
-            />
+  useEffect(() => {
+    setExpandedApplicationId(null);
+  }, [users]);
+
+  return (
+    <section className="admin-users-view">
+      <section className="surface-card full">
+        <div className="panel-heading split-heading">
+          <div>
+            <UsersRound size={19} />
+            <h2>Users</h2>
           </div>
-        </label>
-        <button className="secondary-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
-          {status === "loading" ? <Loader2 className="spin" size={18} /> : <SearchCheck size={18} />}
-          Apply filter
-        </button>
-      </div>
-
-      {status === "error" && (
-        <div className="notice error">
-          <AlertCircle size={18} />
-          <span>{error}</span>
+          <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
+            {status === "loading" ? "Searching" : `${users.length} shown`}
+          </StatusBadge>
         </div>
-      )}
 
-      <div className="admin-user-list">
-        {users.length === 0 ? (
-          <p className="muted">No users match the current filter.</p>
-        ) : (
-          users.map((adminUser) => (
-            <article className="admin-user-card" key={adminUser.id}>
-              <div className="admin-user-header">
-                <div>
-                  <strong>{adminUser.name}</strong>
-                  <span>{adminUser.email}</span>
-                </div>
-                <div className="admin-user-badges">
-                  <StatusBadge tone={adminUser.role === "admin" ? "success" : "neutral"}>
-                    {adminUser.role}
-                  </StatusBadge>
-                  <StatusBadge>{adminUser.applicationCount} applications</StatusBadge>
-                </div>
-              </div>
+        <div className="admin-user-toolbar">
+          <label className="field">
+            <span>Search users, skills, jobs, resumes, and match evidence</span>
+            <div className="input-with-icon">
+              <Search size={18} />
+              <input
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="TypeScript, Java, PostgreSQL, product manager..."
+              />
+            </div>
+          </label>
+          <button className="secondary-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
+            {status === "loading" ? <Loader2 className="spin" size={18} /> : <SearchCheck size={18} />}
+            Apply filter
+          </button>
+        </div>
 
-              <div className="admin-user-grid">
-                <section className="admin-user-section">
-                  <h3>Latest resume</h3>
-                  {adminUser.latestResume ? (
-                    <>
-                      <strong>Version {adminUser.latestResume.versionNumber}</strong>
-                      <span>{adminUser.latestResume.fileName}</span>
-                      <p>{Math.ceil(adminUser.latestResume.characterCount / 1000)}k chars | {adminUser.latestResume.createdAt}</p>
-                    </>
-                  ) : (
-                    <p className="muted">No resume uploaded.</p>
-                  )}
-                </section>
-
-                <section className="admin-user-section">
-                  <h3>Matched terms</h3>
-                  {adminUser.matchedTerms.length > 0 ? (
-                    <div className="tag-list">
-                      {adminUser.matchedTerms.slice(0, 12).map((term) => (
-                        <span className="tag-chip" key={term}>{term}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted">No matched terms yet.</p>
-                  )}
-                </section>
-              </div>
-
-              <section className="admin-user-section">
-                <h3>Recent applications</h3>
-                {adminUser.recentApplications.length === 0 ? (
-                  <p className="muted">No applications yet.</p>
-                ) : (
-                  <div className="admin-user-applications">
-                    {adminUser.recentApplications.map((job) => (
-                      <article className="admin-user-application-row" key={job.id}>
-                        <div>
-                          <strong>{job.jobTitle}</strong>
-                          <span>{job.applicationDate} | {job.status}</span>
-                          {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
-                        </div>
-                        <JobFitBadge job={job} />
-                        {job.llmRecommendation && <p>{job.llmRecommendation}</p>}
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </article>
-          ))
+        {status === "error" && (
+          <div className="notice error">
+            <AlertCircle size={18} />
+            <span>{error}</span>
+          </div>
         )}
-      </div>
+
+        <div className="admin-user-list">
+          {users.length === 0 ? (
+            <p className="muted">No users match the current filter.</p>
+          ) : (
+            users.map((adminUser) => (
+              <article className="admin-user-card" key={adminUser.id}>
+                <div className="admin-user-header">
+                  <div>
+                    <strong>{adminUser.name}</strong>
+                    <span>{adminUser.email}</span>
+                  </div>
+                  <div className="admin-user-badges">
+                    <StatusBadge tone={adminUser.role === "admin" ? "success" : "neutral"}>
+                      {adminUser.role}
+                    </StatusBadge>
+                    <StatusBadge>{adminUser.applicationCount} applications</StatusBadge>
+                  </div>
+              </div>
+
+                <div className="admin-user-grid">
+                  <section className="admin-user-section">
+                    <h3>Latest resume</h3>
+                    {adminUser.latestResume ? (
+                      <>
+                        <strong>Version {adminUser.latestResume.versionNumber}</strong>
+                        <span>{adminUser.latestResume.fileName}</span>
+                        <p>{Math.ceil(adminUser.latestResume.characterCount / 1000)}k chars | {adminUser.latestResume.createdAt}</p>
+                      </>
+                    ) : (
+                      <p className="muted">No resume uploaded.</p>
+                    )}
+                  </section>
+
+                  <section className="admin-user-section">
+                    <h3>Matched terms</h3>
+                    {adminUser.matchedTerms.length > 0 ? (
+                      <div className="tag-list">
+                        {adminUser.matchedTerms.slice(0, 12).map((term) => (
+                          <span className="tag-chip" key={term}>{term}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="muted">No matched terms yet.</p>
+                    )}
+                  </section>
+                </div>
+
+                <section className="admin-user-section">
+                  <h3>Recent applications</h3>
+                  {adminUser.recentApplications.length === 0 ? (
+                    <p className="muted">No applications yet.</p>
+                  ) : (
+                    <div className="admin-user-applications">
+                      {adminUser.recentApplications.map((job) => {
+                        const expanded = expandedApplicationId === job.id;
+                        return (
+                          <article className={`application-card admin-user-application-card${expanded ? " expanded" : ""}`} key={job.id}>
+                            <button
+                              className="application-summary"
+                              type="button"
+                              aria-expanded={expanded}
+                              onClick={() => setExpandedApplicationId(expanded ? null : job.id)}
+                            >
+                              <span className="application-chevron">
+                                {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                              </span>
+                              <span className="application-title">
+                                <strong>{job.jobTitle}</strong>
+                                <span>{job.applicationDate} | {job.status}</span>
+                                {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
+                              </span>
+                              <JobFitBadge job={job} />
+                            </button>
+
+                            {!expanded && job.llmRecommendation && (
+                              <p className="application-preview">{job.llmRecommendation}</p>
+                            )}
+
+                            {expanded && <ApplicationDetailsBody job={job} />}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
     </section>
-  </section>
-);
+  );
+};
 
 const JobSearchPanel = ({
   postings,

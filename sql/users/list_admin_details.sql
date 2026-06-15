@@ -49,6 +49,7 @@ LEFT JOIN LATERAL (
       'characterCount', recent.character_count,
       'chunkCount', recent.chunk_count,
       'llmRecommendation', recent.llm_recommendation,
+      'analysis', recent.analysis_json,
       'fitScore', recent.fit_score,
       'fitLevel', recent.fit_level,
       'errorMessage', recent.error_message,

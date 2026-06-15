@@ -204,6 +204,15 @@ test.describe.serial("resume analyzer account and profile flows", () => {
       await expect(userCard.getByText("admin-users-resume.md")).toBeVisible();
       await expect(userCard.getByText(seededJobTitle)).toBeVisible();
       await expect(userCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+      const adminApplication = userCard.locator(".application-card").filter({ hasText: seededJobTitle });
+      await adminApplication.getByRole("button", { name: new RegExp(seededJobTitle) }).click();
+      await expect(adminApplication.getByText("Candidate summary")).toBeVisible();
+      await expect(adminApplication.getByText("HR Score Breakdown")).toBeVisible();
+      await expect(adminApplication.getByText("Requirement Assessment")).toBeVisible();
+      await expect(adminApplication.getByText("Build secure TypeScript services", { exact: true })).toBeVisible();
+      await expect(adminApplication.getByText("Fairness Review")).toBeVisible();
+      await expect(adminApplication.getByText("Ranked evidence")).toBeVisible();
+      await expect(adminApplication.getByText("REST API delivery evidence with PostgreSQL ownership.")).toBeVisible();
     }
 
     const postingTitle = `E2E Platform Engineer ${Date.now()}`;
