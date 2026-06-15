@@ -391,6 +391,11 @@ CREATE INDEX IF NOT EXISTS job_postings_created_at_id_idx ON job_postings(create
 CREATE INDEX IF NOT EXISTS job_postings_title_trgm_idx ON job_postings USING gin (title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS job_postings_description_trgm_idx ON job_postings USING gin (description gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS job_postings_skills_trgm_idx ON job_postings USING gin ((immutable_text_array_to_string(skills, ' ')) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS job_postings_search_tsv_idx ON job_postings USING gin ((
+  setweight(to_tsvector('simple', COALESCE(title, '')), 'A') ||
+  setweight(to_tsvector('simple', immutable_text_array_to_string(COALESCE(skills, ARRAY[]::text[]), ' ')), 'B') ||
+  setweight(to_tsvector('simple', COALESCE(description, '')), 'C')
+));
 CREATE INDEX IF NOT EXISTS users_created_at_id_idx ON users(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS users_name_trgm_idx ON users USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS users_email_trgm_idx ON users USING gin (email gin_trgm_ops);

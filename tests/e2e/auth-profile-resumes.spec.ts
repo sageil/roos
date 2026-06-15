@@ -4,7 +4,7 @@ import path from "node:path";
 import { Client } from "pg";
 import type { ResumeAnalysis } from "../../src/shared/types";
 
-const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
+const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com.au";
 const adminPassword = process.env.ADMIN_PASSWORD || "ChangeThisAdminPassword123";
 const resumeFixture = path.resolve("tests/fixtures/resume.md");
 const seedCompletedApplicationSql = readFileSync(
@@ -19,7 +19,7 @@ const seedResumeVersionSql = readFileSync(
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.round(Math.random() * 100_000)}@example.com`;
 
 const signIn = async (page: Page, email: string, password: string) => {
-  await page.getByPlaceholder("admin@example.com").fill(email);
+  await page.getByPlaceholder("admin@example.com.au").fill(email);
   await page.getByPlaceholder("Account password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 };
@@ -157,7 +157,7 @@ test.describe.serial("Roos account and profile flows", () => {
     await page.getByRole("button", { name: "Register" }).click();
     await expect(page.getByRole("heading", { name: "Create account" })).toBeVisible();
 
-    await page.getByPlaceholder("Jane Doe").fill("E2E Candidate");
+    await page.getByPlaceholder("Jane Doe").fill("Sarah Mitchell");
     await page.getByPlaceholder("jane@example.com").fill(email);
     await page.getByPlaceholder("12+ chars, mixed case, number").fill("SecurePass123");
     await page.getByPlaceholder("Retype account password").fill("SecurePass123");
@@ -169,7 +169,7 @@ test.describe.serial("Roos account and profile flows", () => {
     await page.getByRole("button", { name: "Profile" }).first().click();
     await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible();
 
-    await page.locator(".profile-form").first().getByRole("textbox").first().fill("E2E Candidate Updated");
+    await page.locator(".profile-form").first().getByRole("textbox").first().fill("Sarah Mitchell");
     await page.locator(".profile-form").first().getByRole("textbox").nth(1).fill(updatedEmail);
     await page.getByRole("button", { name: "Save profile" }).click();
 
@@ -200,7 +200,7 @@ test.describe.serial("Roos account and profile flows", () => {
 
     await page.goto("/");
     await page.getByRole("button", { name: "Register" }).click();
-    await page.getByPlaceholder("Jane Doe").fill("Password Change Candidate");
+    await page.getByPlaceholder("Jane Doe").fill("Olivia Parker");
     await page.getByPlaceholder("jane@example.com").fill(email);
     await page.getByPlaceholder("12+ chars, mixed case, number").fill(oldPassword);
     await page.getByPlaceholder("Retype account password").fill(oldPassword);
@@ -216,7 +216,7 @@ test.describe.serial("Roos account and profile flows", () => {
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("button", { name: "Login" }).click();
-    await page.getByPlaceholder("admin@example.com").fill(email);
+    await page.getByPlaceholder("admin@example.com.au").fill(email);
     await page.getByPlaceholder("Account password").fill(oldPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByText("Invalid email or password.")).toBeVisible();
@@ -231,7 +231,7 @@ test.describe.serial("Roos account and profile flows", () => {
 
     await page.goto("/");
     await page.getByRole("button", { name: "Register" }).click();
-    await page.getByPlaceholder("Jane Doe").fill("No Resume Candidate");
+    await page.getByPlaceholder("Jane Doe").fill("Daniel Cooper");
     await page.getByPlaceholder("jane@example.com").fill(email);
     await page.getByPlaceholder("12+ chars, mixed case, number").fill("SecurePass123");
     await page.getByPlaceholder("Retype account password").fill("SecurePass123");
@@ -254,11 +254,11 @@ test.describe.serial("Roos account and profile flows", () => {
 
     const email = uniqueEmail("e2e-reanalysis");
     const password = "SecurePass123";
-    const postingTitle = `E2E Reanalysis Role ${Date.now()}`;
+    const postingTitle = `Backend Developer - Veterinary Data Platform ${Date.now()}`;
 
     const registration = await request.post("/api/register", {
       data: {
-        name: "Reanalysis Candidate",
+        name: "Emily Foster",
         email,
         password,
         passwordConfirmation: password
@@ -266,7 +266,7 @@ test.describe.serial("Roos account and profile flows", () => {
     });
     expect(registration.status()).toBe(201);
     const session = await registration.json();
-    await seedResumeVersion({ userId: session.user.id, fileName: "older-resume.md" });
+    await seedResumeVersion({ userId: session.user.id, fileName: "resume.md" });
 
     const adminLogin = await request.post("/api/login", {
       data: {
@@ -282,7 +282,7 @@ test.describe.serial("Roos account and profile flows", () => {
       },
       data: {
         title: postingTitle,
-        description: "Backend developer role covering Node.js, PostgreSQL, API integrations, testing, and security.",
+        description: "Backend developer role covering Node.js, PostgreSQL, API integrations, testing, and security for veterinary operations software.",
         skills: ["Node.js", "PostgreSQL", "testing"]
       }
     });
@@ -293,7 +293,7 @@ test.describe.serial("Roos account and profile flows", () => {
       userId: session.user.id,
       jobTitle: postingTitle,
       jobDescription: jobPosting.description,
-      resumeFileName: "older-resume.md",
+      resumeFileName: "resume.md",
       jobPostingId: jobPosting.id
     });
 
@@ -391,7 +391,7 @@ test.describe.serial("Roos account and profile flows", () => {
 
     const regularRegistration = await request.post("/api/register", {
       data: {
-        name: "Regular E2E User",
+        name: "Michael Nguyen",
         email: regularEmail,
         password: "SecurePass123",
         passwordConfirmation: "SecurePass123"
@@ -425,14 +425,14 @@ test.describe.serial("Roos account and profile flows", () => {
     });
     expect(settingsDenied.status()).toBe(403);
 
-    const seededJobTitle = `Seeded Veterinary Reception Role ${Date.now()}`;
+    const seededJobTitle = `Veterinary Receptionist - Client Services ${Date.now()}`;
     if (process.env.DATABASE_URL) {
       await seedResumeVersion({ userId: regularSession.user.id, fileName: "admin-users-resume.md" });
       await seedCompletedApplication({ userId: regularSession.user.id, jobTitle: seededJobTitle });
     }
 
     await page.goto("/");
-    await page.getByPlaceholder("admin@example.com").fill(adminEmail);
+    await page.getByPlaceholder("admin@example.com.au").fill(adminEmail);
     await page.getByPlaceholder("Account password").fill(adminPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
 
@@ -455,7 +455,7 @@ test.describe.serial("Roos account and profile flows", () => {
     await expect(page.getByRole("radio", { name: "Chat completions" })).toBeVisible();
     const tlsToggle = page.getByRole("checkbox", { name: "Use implicit TLS" });
     await expect(tlsToggle).toBeVisible();
-    const fromName = `E2E Hiring Team ${Date.now()}`;
+    const fromName = `Roos Hiring Team ${Date.now()}`;
     await page.getByLabel("From name").fill(fromName);
     const settingsSave = page.waitForResponse((response) =>
       response.url().includes("/api/admin/settings") && response.request().method() === "PATCH"
@@ -497,7 +497,7 @@ test.describe.serial("Roos account and profile flows", () => {
       await expect(meetingDialog).not.toBeVisible();
     }
 
-    const postingTitle = `E2E Veterinary Receptionist ${Date.now()}`;
+    const postingTitle = `Veterinary Receptionist - Front Desk ${Date.now()}`;
     await page.getByRole("button", { name: "Add jobs" }).click();
     await expect(page.getByRole("heading", { name: "Add job posting" })).toBeVisible();
     await page.getByPlaceholder("Veterinary Receptionist").fill(postingTitle);
@@ -532,11 +532,11 @@ test.describe.serial("Roos account and profile flows", () => {
 
     const candidateEmail = uniqueEmail("e2e-assessment-candidate");
     const password = "SecurePass123";
-    const postingTitle = `E2E Candidate Assessment ${Date.now()}`;
+    const postingTitle = `Veterinary Receptionist - Client Intake ${Date.now()}`;
 
     const candidateRegistration = await request.post("/api/register", {
       data: {
-        name: "Candidate Assessment User",
+        name: "Priya Shah",
         email: candidateEmail,
         password,
         passwordConfirmation: password
@@ -646,11 +646,11 @@ test.describe.serial("Roos account and profile flows", () => {
 
     const email = uniqueEmail("e2e-application-details");
     const password = "SecurePass123";
-    const jobTitle = `Seeded Veterinary Reception Role ${Date.now()}`;
+    const jobTitle = `Veterinary Receptionist - Client Services ${Date.now()}`;
 
     const registration = await request.post("/api/register", {
       data: {
-        name: "Application Details User",
+        name: "Jessica Brown",
         email,
         password,
         passwordConfirmation: password
@@ -662,7 +662,7 @@ test.describe.serial("Roos account and profile flows", () => {
     await seedCompletedApplication({ userId: session.user.id, jobTitle });
 
     await page.goto("/");
-    await page.getByPlaceholder("admin@example.com").fill(email);
+    await page.getByPlaceholder("admin@example.com.au").fill(email);
     await page.getByPlaceholder("Account password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
 

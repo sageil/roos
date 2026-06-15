@@ -8,9 +8,9 @@ vi.mock("../../src/server/config.js", () => ({
       smtpHost: "smtp.example.test",
       smtpPort: 587,
       smtpSecure: false,
-      smtpUser: "admin@example.com",
+      smtpUser: "admin@example.com.au",
       smtpPass: "app-password",
-      from: "admin@example.com",
+      from: "admin@example.com.au",
       fromName: "Hiring Team"
     }
   }
@@ -21,7 +21,7 @@ import { buildMeetingInviteIcs, buildMeetingInviteMessage } from "../../src/serv
 const admin: UserRecord = {
   id: 1,
   name: "Hiring Admin",
-  email: "admin@example.com",
+  email: "admin@example.com.au",
   role: "admin",
   createdAt: "2026-06-15T08:00:00.000Z"
 };
@@ -69,7 +69,7 @@ describe("emailService", () => {
       message: "Interview details\n\nJob description:\nManage client intake."
     });
 
-    expect(message.from).toBe("admin@example.com");
+    expect(message.from).toBe("admin@example.com.au");
     expect(message.recipient).toBe("priya@example.com.au");
     expect(message.data).toContain("Subject: Interview invitation for Veterinary Receptionist");
     expect(message.data).toContain("Content-Type: text/calendar; charset=utf-8; method=REQUEST; name=invite.ics");

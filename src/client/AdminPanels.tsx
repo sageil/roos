@@ -1312,6 +1312,9 @@ export const healthTone = (status: "online" | "degraded" | "offline"): "success"
   return "danger";
 };
 
+export const healthStatusLabel = (status: "online" | "degraded" | "offline") =>
+  status.charAt(0).toUpperCase() + status.slice(1);
+
 export const AdminSettingsPanel = ({
   settings,
   status,
@@ -1575,7 +1578,7 @@ export const SystemHealthPanel = ({
         <div className="health-actions">
           {health && (
             <StatusBadge tone={health.ok ? "success" : "danger"}>
-              {health.ok ? "All systems online" : "Action needed"}
+              {health.ok ? "All Systems Online" : "Action Needed"}
             </StatusBadge>
           )}
           <button className="secondary-button compact-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
@@ -1599,7 +1602,7 @@ export const SystemHealthPanel = ({
               icon={<Server size={17} />}
               label="Overall"
               value={health.ok ? "Online" : "Degraded"}
-              caption={health.generatedAt}
+              caption={formatLocalDateTime(health.generatedAt)}
             />
             <MetricTile
               icon={<Layers3 size={17} />}
@@ -1610,7 +1613,7 @@ export const SystemHealthPanel = ({
             <MetricTile
               icon={<Database size={17} />}
               label="Storage"
-              value={health.components.find((component) => component.name === "PostgreSQL")?.status ?? "unknown"}
+              value={healthStatusLabel(health.components.find((component) => component.name === "PostgreSQL")?.status ?? "offline")}
               caption="Postgres and pgvector"
             />
             <MetricTile
@@ -1631,10 +1634,10 @@ export const SystemHealthPanel = ({
                 <article className="health-card" key={component.name}>
                   <div>
                     <strong>{component.name}</strong>
-                    <StatusBadge tone={healthTone(component.status)}>{component.status}</StatusBadge>
+                    <StatusBadge tone={healthTone(component.status)}>{healthStatusLabel(component.status)}</StatusBadge>
                   </div>
                   <p>{component.details}</p>
-                  <span>{component.checkedAt}</span>
+                  <span>{formatLocalDateTime(component.checkedAt)}</span>
                 </article>
               ))}
             </div>
@@ -1651,7 +1654,7 @@ export const SystemHealthPanel = ({
                   <div>
                     <strong>{instance.name}</strong>
                     <StatusBadge tone={instance.status === "online" ? "success" : "danger"}>
-                      {instance.status}
+                      {healthStatusLabel(instance.status)}
                     </StatusBadge>
                   </div>
                   <p>{instance.url}</p>
@@ -1681,7 +1684,7 @@ export const SystemHealthPanel = ({
                       </>
                     )}
                   </dl>
-                  <span>{instance.checkedAt}</span>
+                  <span>{formatLocalDateTime(instance.checkedAt)}</span>
                 </article>
               ))}
             </div>

@@ -1,3 +1,136 @@
+WITH search_input AS (
+  SELECT
+    query.raw_query,
+    CASE
+      WHEN query.raw_query IS NULL THEN NULL
+      ELSE websearch_to_tsquery('simple', query.raw_query)
+    END AS text_query,
+    (
+      SELECT to_tsquery('simple', string_agg(token || ':*', ' & '))
+      FROM (
+        SELECT regexp_replace(value, '[^[:alnum:]_]+', '', 'g') AS token
+        FROM regexp_split_to_table(COALESCE(query.raw_query, ''), '\s+') AS split(value)
+      ) tokens
+      WHERE token <> ''
+    ) AS prefix_query
+  FROM (
+    SELECT NULLIF(trim($1::text), '') AS raw_query
+  ) query
+),
+scored_users AS (
+  SELECT
+    u.*,
+    search_input.raw_query,
+    array_position($2::bigint[], u.id) AS semantic_rank,
+    CASE
+      WHEN search_input.text_query IS NULL THEN 0::real
+      ELSE
+        COALESCE(ts_rank_cd(search_document.document, search_input.text_query, 32), 0) +
+        COALESCE(ts_rank_cd(search_document.document, search_input.prefix_query, 32), 0)
+    END AS text_rank,
+    CASE
+      WHEN search_input.raw_query IS NULL THEN false
+      ELSE (
+        COALESCE(search_document.document @@ search_input.text_query, false)
+        OR COALESCE(search_document.document @@ search_input.prefix_query, false)
+        OR search_document.raw_text ILIKE '%' || search_input.raw_query || '%'
+      )
+    END AS text_match
+  FROM users u
+  CROSS JOIN search_input
+  CROSS JOIN LATERAL (
+    SELECT
+      string_agg(rv.file_name, ' ') AS file_names
+    FROM resume_versions rv
+    WHERE rv.user_id = u.id
+  ) resume_search
+  CROSS JOIN LATERAL (
+    SELECT
+      string_agg(j.job_title, ' ') AS job_titles,
+      string_agg(
+        concat_ws(
+          ' ',
+          j.job_description,
+          j.llm_recommendation,
+          j.analysis_json::text,
+          jp.title,
+          immutable_text_array_to_string(COALESCE(jp.skills, ARRAY[]::text[]), ' ')
+        ),
+        ' '
+      ) AS job_details
+    FROM jobs j
+    LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
+    WHERE j.user_id = u.id
+      AND j.analysis_kind = 'application'
+  ) job_search
+  CROSS JOIN LATERAL (
+    SELECT
+      concat_ws(
+        ' ',
+        u.name,
+        u.email,
+        resume_search.file_names,
+        job_search.job_titles,
+        job_search.job_details
+      ) AS raw_text,
+      setweight(to_tsvector('simple', concat_ws(' ', u.name, u.email)), 'A') ||
+      setweight(to_tsvector('simple', COALESCE(job_search.job_titles, '')), 'B') ||
+      setweight(to_tsvector('simple', concat_ws(
+        ' ',
+        resume_search.file_names,
+        job_search.job_details
+      )), 'C') AS document
+  ) search_document
+  WHERE
+    $4::bigint IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM jobs assessed
+      WHERE assessed.user_id = u.id
+        AND assessed.job_posting_id = $4::bigint
+        AND assessed.status <> 'failed'
+    )
+),
+filtered_users AS (
+  SELECT *
+  FROM scored_users
+  WHERE
+    raw_query IS NULL
+    OR semantic_rank IS NOT NULL
+    OR text_match
+),
+ranked_users AS (
+  SELECT
+    filtered_users.*,
+    CASE
+      WHEN raw_query IS NULL OR NOT text_match THEN NULL
+      ELSE row_number() OVER (
+        PARTITION BY raw_query IS NOT NULL AND text_match
+        ORDER BY text_rank DESC, created_at DESC, id DESC
+      )
+    END AS text_rank_position,
+    MAX(text_rank) FILTER (WHERE text_match) OVER () AS max_text_rank
+  FROM filtered_users
+),
+fused_users AS (
+  SELECT
+    ranked_users.*,
+    CASE
+      WHEN raw_query IS NULL THEN 0::double precision
+      ELSE
+        (
+          0.75 * COALESCE(
+            text_rank / NULLIF(max_text_rank, 0),
+            (1.0 / (60 + text_rank_position)) / (1.0 / 61),
+            0
+          )
+        ) +
+        (
+          0.25 * COALESCE((1.0 / (60 + semantic_rank)) / (1.0 / 61), 0)
+        )
+    END AS hybrid_rank
+  FROM ranked_users
+)
 SELECT
   u.id::int,
   u.name,
@@ -8,106 +141,7 @@ SELECT
   latest_resume.resume_json,
   COALESCE(recent_jobs.jobs_json, '[]'::jsonb) AS recent_jobs_json,
   COALESCE(matched_terms.terms, ARRAY[]::text[]) AS matched_terms
-FROM users u
-LEFT JOIN LATERAL (
-  SELECT array_position($2::bigint[], u.id) AS rank
-) semantic_match ON true
-LEFT JOIN LATERAL (
-  SELECT MIN(rank) AS rank
-  FROM (
-    SELECT 0 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND (
-        u.name ILIKE $1 || '%'
-        OR u.email ILIKE $1 || '%'
-      )
-
-    UNION ALL
-
-    SELECT 1 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND j.job_title ILIKE $1 || '%'
-      )
-
-    UNION ALL
-
-    SELECT 2 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND (
-            j.job_title ILIKE '% ' || $1 || '%'
-            OR j.job_title ILIKE '%-' || $1 || '%'
-            OR j.job_title ILIKE '%/' || $1 || '%'
-          )
-      )
-
-    UNION ALL
-
-    SELECT 3 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND j.job_title ILIKE '%' || $1 || '%'
-      )
-
-    UNION ALL
-
-    SELECT 4 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        JOIN job_postings jp ON jp.id = j.job_posting_id
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND (
-            immutable_text_array_to_string(jp.skills, ' ') ILIKE $1 || '%'
-            OR immutable_text_array_to_string(jp.skills, ' ') ILIKE '% ' || $1 || '%'
-          )
-      )
-
-    UNION ALL
-
-    SELECT 5 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        JOIN job_postings jp ON jp.id = j.job_posting_id
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND immutable_text_array_to_string(jp.skills, ' ') ILIKE '%' || $1 || '%'
-      )
-
-    UNION ALL
-
-    SELECT 6 AS rank
-    WHERE COALESCE($1::text, '') <> ''
-      AND EXISTS (
-        SELECT 1
-        FROM jobs j
-        WHERE j.user_id = u.id
-          AND j.analysis_kind = 'application'
-          AND (
-            COALESCE(j.job_description, '') ILIKE '%' || $1 || '%'
-            OR COALESCE(j.llm_recommendation, '') ILIKE '%' || $1 || '%'
-            OR COALESCE(j.analysis_json::text, '') ILIKE '%' || $1 || '%'
-          )
-      )
-  ) ranked_matches
-) text_match ON true
+FROM fused_users u
 LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS application_count
   FROM jobs j
@@ -205,50 +239,11 @@ LEFT JOIN LATERAL (
   ) raw_terms
   WHERE trim(term) <> ''
 ) matched_terms ON true
-WHERE
-  (
-    COALESCE($1::text, '') = ''
-    OR u.id = ANY($2::bigint[])
-    OR u.name ILIKE '%' || $1 || '%'
-    OR u.email ILIKE '%' || $1 || '%'
-    OR EXISTS (
-      SELECT 1
-      FROM resume_versions rv
-      WHERE rv.user_id = u.id
-        AND rv.file_name ILIKE '%' || $1 || '%'
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM jobs j
-      LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
-      WHERE j.user_id = u.id
-        AND j.analysis_kind = 'application'
-        AND (
-          j.job_title ILIKE '%' || $1 || '%'
-          OR COALESCE(j.job_description, '') ILIKE '%' || $1 || '%'
-          OR COALESCE(j.llm_recommendation, '') ILIKE '%' || $1 || '%'
-          OR COALESCE(j.analysis_json::text, '') ILIKE '%' || $1 || '%'
-          OR immutable_text_array_to_string(jp.skills, ' ') ILIKE '%' || $1 || '%'
-        )
-    )
-  )
-  AND (
-    $4::bigint IS NULL
-    OR NOT EXISTS (
-      SELECT 1
-      FROM jobs assessed
-      WHERE assessed.user_id = u.id
-        AND assessed.job_posting_id = $4::bigint
-        AND assessed.status <> 'failed'
-    )
-  )
 ORDER BY
-  CASE
-    WHEN COALESCE($1::text, '') = '' THEN 0
-    ELSE COALESCE(text_match.rank, 50)
-  END,
-  CASE WHEN semantic_match.rank IS NULL THEN 1 ELSE 0 END,
-  semantic_match.rank NULLS LAST,
+  u.hybrid_rank DESC,
+  u.text_rank DESC,
+  CASE WHEN u.semantic_rank IS NULL THEN 1 ELSE 0 END,
+  u.semantic_rank NULLS LAST,
   u.created_at DESC,
   u.id DESC
 LIMIT $3

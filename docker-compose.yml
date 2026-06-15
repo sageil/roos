@@ -10,7 +10,7 @@ x-app-environment: &app-environment
   LLM_API_STYLE: ${LLM_API_STYLE:-responses}
   SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
   ADMIN_NAME: ${ADMIN_NAME:-Roos Admin}
-  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com.au}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
@@ -185,7 +185,7 @@ services:
     working_dir: /app
     environment:
       E2E_BASE_URL: https://roos-web
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com.au}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/roos
     volumes:
@@ -203,7 +203,7 @@ services:
     working_dir: /app
     environment:
       DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/roos
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com.au}
       LLM_MODEL: ${LLM_MODEL:-gpt-5.5}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
     volumes:

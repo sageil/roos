@@ -28,7 +28,7 @@ export const config = {
   maxUploadBytes: 8 * 1024 * 1024,
   sessionTtlSeconds: optionalNumber(process.env.SESSION_TTL_SECONDS) ?? 60 * 60 * 24 * 7,
   adminName: process.env.ADMIN_NAME || "Roos Admin",
-  adminEmail: process.env.ADMIN_EMAIL || "admin@example.com",
+  adminEmail: process.env.ADMIN_EMAIL || "admin@example.com.au",
   adminPassword: process.env.ADMIN_PASSWORD,
   email: {
     smtpHost: process.env.SMTP_HOST,

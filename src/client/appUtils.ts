@@ -143,12 +143,12 @@ export const filenameFromContentDisposition = (header: string | null, fallback: 
 
 export const fitLabel = (score: number) => {
   if (score >= 80) {
-    return "Strong fit";
+    return "Strong match";
   }
   if (score >= 60) {
-    return "Partial fit";
+    return "Moderate match";
   }
-  return "Needs work";
+  return "Low match";
 };
 
 export const fitTone = (score: number): "success" | "warning" | "danger" => {

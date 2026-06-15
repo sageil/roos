@@ -197,6 +197,7 @@ deleted_postings AS (
 deleted_demo_users AS (
   DELETE FROM users
   WHERE email LIKE '%@example.com.au'
+    AND role <> 'admin'
     AND (SELECT COUNT(*) FROM deleted_postings) >= 0
   RETURNING 1
 ),

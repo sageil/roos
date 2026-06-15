@@ -1,275 +1,333 @@
 # Roos
 
-Roos is a TypeScript resume analysis app with a React front end, Node/Express API, OpenAI text analysis, and configurable OpenAI-compatible embedding models.
+> Roos uses AI to compare resumes with job requirements and give hiring teams a clear, evidence-based summary of each application.
 
-## Project Docs
+Roos is a self-hosted resume screening app. Candidates can upload resume versions, apply to roles, and review their own applications. Hiring teams can create roles, compare candidates against those roles, and review structured application summaries.
 
-- Product requirements: `docs/requirements.md`
-- Architecture: `docs/architecture.md`
-- Agent workflow notes: `AGENT.md`
+[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](./LICENSE)
 
-## What it does
+## What Roos Does
 
-- Uploads resumes as `.pdf`, `.docx`, `.txt`, or `.md`.
-- Stores each analysis job in PostgreSQL with application date, job title, and LLM recommendation.
-- Supports user and admin accounts with server-side password hashing.
-- Users can review their own resumes, applied jobs, LLM match analysis, evidence, and recommendations.
-- Users have a dedicated login page and profile page.
-- Users have a dedicated jobs page to search roles by exact text and semantic meaning before matching a resume.
-- Applications, jobs, users, posting applications, and admin job-posting lists load 10 records at a time and append the next page when the user scrolls.
-- Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
-- Users can download their versioned resume uploads in the same file format they uploaded.
-- Resume uploads ask users to confirm personal identifiers and redact them before storage, embedding, cache lookup, or LLM analysis.
-- Admins have a dedicated jobs page to create postings, enter required skills as tags, review candidate matches, and assess stored candidate resumes against a selected posting.
-- Admin candidate assessments are hidden from candidate-facing application history until an admin explicitly converts the assessment to an application.
-- Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles, with text relevance used ahead of broad semantic matches.
-- Admins can download user profile resume versions in the same file format the user uploaded.
-- Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
-- Users can switch UI themes between Launch, Icy Blue, and Crimson Lit; the selected theme is saved in browser local storage.
-- Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
-- Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
+- Compares resumes with job requirements using an AI service that supports the OpenAI API format.
+- Keeps resume uploads as versions, so candidates can re-apply only after uploading a newer resume.
+- Gives hiring teams clear application summaries, scores, evidence, risks, and recommendations.
+- Supports candidate accounts, admin accounts, profile editing, password changes, and resume downloads.
+- Runs locally with Docker Compose and PostgreSQL.
 
-## Setup
+## Quick Start
+
+The recommended setup is Docker Compose.
+
+### 1. Copy the environment file
 
 ```bash
-pnpm install
 cp .env.example .env
 ```
 
-Edit `.env` with your provider settings.
+Open `.env` and change these values before sharing the app with anyone else:
 
-## Docker Compose
+```bash
+POSTGRES_ADMIN_PASSWORD=change-this-admin-password
+APP_DB_PASSWORD=change-this-app-password
+ADMIN_PASSWORD=ChangeThisAdminPassword123
+```
 
-The recommended local stack runs Nginx, two app instances, and PostgreSQL with pgvector together:
+### 2. Choose an AI provider
+
+Roos needs an AI chat model. The default `.env.example` is set up for LM Studio running on your computer at `http://127.0.0.1:1234`.
+
+For LM Studio with Docker Compose, keep:
+
+```bash
+OPENAI_API_KEY=not-needed
+OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+LLM_MODEL=google/gemma-4-e4b
+LLM_API_STYLE=chat
+```
+
+For OpenAI, use:
+
+```bash
+OPENAI_API_KEY=sk-your-key
+OPENAI_BASE_URL=
+LLM_MODEL=gpt-5.5
+LLM_API_STYLE=responses
+EMBEDDING_API_KEY=
+EMBEDDING_BASE_URL=
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=768
+```
+
+### 3. Start Roos
 
 ```bash
 docker compose up --build
 ```
 
-Open the app through the Nginx proxy at `https://localhost:8787`.
-
-The public request path is:
+Open:
 
 ```text
-browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
+https://localhost:8787
 ```
 
-Only Nginx publishes a host port, and it publishes HTTPS only. The app instances and PostgreSQL stay on the private Compose network.
+Your browser may warn about the local certificate. That is expected for this local setup. You can continue in the browser, or trust the generated local root certificate from `data/tls/root_ca.crt`.
 
-Compose uses a one-shot Smallstep CLI container to generate a local development root CA and Nginx server certificate in `data/tls/`. That directory is ignored by Git.
+### 4. Sign in as admin
 
-To trust the local development certificate in your browser, install the generated root CA:
+Use the admin values from `.env`:
+
+```text
+Email: admin@example.com.au
+Password: ChangeThisAdminPassword123
+```
+
+Change the password in `.env` before using real data.
+
+## Common Commands
+
+Commands that start with `pnpm` require pnpm and project dependencies:
 
 ```bash
-step certificate install data/tls/root_ca.crt
+pnpm install
 ```
 
-Compose persists:
-
-- Jobs, analysis metadata, and resume vectors in the `postgres_data` volume.
-- Registered users with scrypt password hashes in the same volume.
-
-PostgreSQL is only exposed inside the Docker network. The app connects with the restricted `APP_DB_USER` role; the bootstrap admin password is only supplied to the database container.
-
-When the app instances run in Docker, they connect to:
+Start the app:
 
 ```bash
-APP_DB_USER=<set in .env>
-APP_DB_PASSWORD=<set in .env>
-DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@postgres:5432/roos
-EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
+docker compose up --build
 ```
 
-Keep LM Studio running on your host at `http://127.0.0.1:1234`. Docker uses `host.docker.internal` to reach it from the app container.
+Start in the background:
 
-Stop the stack with:
+```bash
+docker compose up --build -d nginx
+```
+
+Stop the app:
 
 ```bash
 docker compose down
 ```
 
-Remove persisted data only when you intentionally want to reset everything:
+Stop the app and delete saved data:
 
 ```bash
 docker compose down -v
 ```
 
-For local development outside Docker, run PostgreSQL with pgvector and set:
+Seed demo users, resumes, roles, and applications:
 
 ```bash
-APP_DB_USER=<set in .env>
-APP_DB_PASSWORD=<set in .env>
-DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@127.0.0.1:5432/roos
+pnpm db:seed:demo
 ```
 
-The app creates the `vector` extension and required tables on startup.
-
-Database SQL is kept outside the TypeScript store:
-
-- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, `match_resume_chunks(...)`, `match_user_match_profiles(...)`, and `match_job_posting_match_profiles(...)`.
-- `sql/analysis_cache/*.sql` contains cached analysis lookup and upsert queries.
-- `sql/jobs/*.sql` contains job CRUD queries.
-- `sql/job_posting_match_profiles/*.sql` contains semantic role search profile refresh and matching calls.
-- `sql/users/*.sql` and `sql/sessions/*.sql` contain account, role, and session queries.
-- `sql/resume_versions/*.sql` contains versioned profile resume upload queries.
-- `sql/resume_chunks/*.sql` contains embedding upserts and vector search calls.
-- `sql/user_match_profiles/*.sql` contains semantic admin user search profile refresh and matching calls.
-- Admin semantic user search stores `text-embedding-nomic-embed-text-v1.5-embedding` profiles as `vector(768)` so pgvector can use IVFFlat.
-- Semantic role search stores job posting profiles as `vector(768)` for the same IVFFlat-backed search path.
-
-Admin seeding is controlled by:
+Reset demo and test data while keeping the admin account:
 
 ```bash
-ADMIN_NAME=Roos Admin
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=ChangeThisAdminPassword123
+pnpm db:test:clean
 ```
 
-Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview`, `/api/admin/system-health`, the admin overview, and the System Health page in the UI.
+Run checks:
 
-Admins can create reusable job postings from the dedicated Admin Jobs page. Each posting includes required skills as tags. Users can apply to an active posting with their latest resume, and admins can review linked applications from the Applications and Jobs views.
+```bash
+pnpm typecheck
+pnpm test:unit
+pnpm build
+```
 
-Admin role assessment has a separate candidate-assessment path. From the Jobs page, admins choose **Assess a candidate**, search stored users by name, and analyze the selected candidate's latest resume against the posting. These records are stored as `jobs.analysis_kind = 'candidate_assessment'` and are not visible as user-submitted applications. Admins can convert a candidate assessment to a normal application later if it should become part of the candidate's application history.
+Run browser tests in Docker:
 
-Admins can schedule a meeting from an expanded application card. The server sends a plain-text email with an attached calendar invite (`text/calendar`) through a configured SMTP service. For Gmail, use an app password for `SMTP_PASS`.
+```bash
+pnpm e2e:docker
+```
+
+## Local Development
+
+Use this path when you want to work on the code.
+
+### Requirements
+
+- Node.js 25 or a compatible recent Node.js version
+- pnpm
+- Docker Desktop or another Docker Compose runtime
+- PostgreSQL with pgvector reachable from your computer
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Run the app in development mode:
+
+```bash
+pnpm dev
+```
+
+Development URLs:
+
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:8787`
+- Full Docker app: `https://localhost:8787`
+
+When running the API directly on your computer, use local provider URLs in `.env`, for example:
+
+```bash
+OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
+DATABASE_URL=postgres://roos_app:change-this-app-password@127.0.0.1:5432/roos
+```
+
+The PostgreSQL service in `docker-compose.yml` is private to Docker and is not published on `127.0.0.1:5432`. For host-based development, run your own local PostgreSQL with pgvector, or update Compose to publish the database port for your machine.
+
+## Configuration
+
+Most setup is controlled by `.env`.
+
+| Setting | What it does |
+| --- | --- |
+| `ADMIN_EMAIL` | Admin sign-in email created on startup. |
+| `ADMIN_PASSWORD` | Admin password created or refreshed on startup. |
+| `OPENAI_API_KEY` | API key for the chat model provider. |
+| `OPENAI_BASE_URL` | Optional OpenAI-compatible provider URL. |
+| `LLM_MODEL` | Chat model used for application summaries. |
+| `LLM_API_STYLE` | Use `responses` for OpenAI Responses API or `chat` for chat-completions providers. |
+| `EMBEDDING_MODEL` | Model used to compare resumes, roles, and evidence. |
+| `EMBEDDING_DIMENSIONS` | Vector size for the embedding model. The default is `768`. |
+| `SMTP_*` | Optional email settings for meeting invites. |
+
+### Gmail Meeting Invites
+
+For Gmail, use an app password:
 
 ```bash
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-account@gmail.com
-SMTP_PASS=<gmail-app-password>
+SMTP_PASS=your-gmail-app-password
 EMAIL_FROM=your-account@gmail.com
 EMAIL_FROM_NAME=Roos Admin
 ```
 
-List pages use offset pagination. The API accepts `limit` and `offset` query parameters on page-facing list endpoints and the UI requests `limit=10`, then appends the next 10 records when the scroll sentinel comes into view. This keeps seeded or production-sized user, application, and posting lists from rendering all records at once.
+## Demo Data
 
-The theme control cycles through three CSS-variable themes:
+Use demo data when you want to try Roos without creating users, resumes, and roles by hand.
 
-- `Launch`, the default warm theme.
-- `Icy Blue`, based on Octet's icy blue palette.
-- `Crimson Lit`, based on Octet's crimson-lit palette.
+### Seed demo data
 
-The selected theme is stored under `roos-theme` in browser local storage and applied through `document.documentElement.dataset.theme`.
-
-The System Health page probes app instances from the API container using `APP_INSTANCE_URLS`. Docker Compose sets this to the private `app-1` and `app-2` instance health endpoints by default.
-
-Repeated analyses for the same normalized resume text, job title, job description, LLM model, and embedding model reuse the cached structured analysis. Each application still gets its own job row and evidence chunks, but the fit score and recommendation remain consistent for identical inputs.
-
-Resume privacy redaction runs locally in the API before any extracted resume text is stored for analysis or sent to an embedding or LLM provider. The server always includes the authenticated user's profile name and email in the redaction set, and the upload UI asks users to confirm any phone numbers, address lines, and personal links that should also be removed. Persisted upload filenames are replaced with neutral names such as `resume.pdf` to avoid leaking names through metadata. The original uploaded file bytes are stored separately so authorized users and admins can download the resume in the same file format.
-
-For OpenAI:
-
-```bash
-OPENAI_API_KEY=sk-...
-LLM_MODEL=gpt-5.5
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIMENSIONS=768
-```
-
-For LM Studio as the LLM provider outside Docker:
-
-```bash
-OPENAI_API_KEY=not-needed
-OPENAI_BASE_URL=http://127.0.0.1:1234/v1
-LLM_MODEL=<your-lm-studio-chat-model>
-LLM_API_STYLE=chat
-```
-
-For LM Studio as the LLM provider from Docker Compose:
-
-```bash
-OPENAI_API_KEY=not-needed
-OPENAI_BASE_URL=http://host.docker.internal:1234/v1
-LLM_MODEL=<your-lm-studio-chat-model>
-LLM_API_STYLE=chat
-```
-
-Use `LLM_API_STYLE=chat` for LM Studio unless your local LM Studio server explicitly supports the OpenAI Responses API.
-
-For Ollama as the LLM provider, first pull a local model:
-
-```bash
-ollama pull llama3.2
-```
-
-Then use Ollama's OpenAI-compatible API outside Docker:
-
-```bash
-OPENAI_API_KEY=ollama
-OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-LLM_MODEL=llama3.2
-LLM_API_STYLE=chat
-```
-
-From Docker Compose, point the app at the host Ollama server:
-
-```bash
-OPENAI_API_KEY=ollama
-OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-LLM_MODEL=llama3.2
-LLM_API_STYLE=chat
-```
-
-Ollama ignores the API key but OpenAI-compatible clients still require one. Ollama also supports `/v1/responses` in recent versions, but `LLM_API_STYLE=chat` is the more portable default.
-
-For an OpenAI-compatible embeddings provider:
-
-```bash
-EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
-EMBEDDING_API_KEY=not-needed
-EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5-embedding
-EMBEDDING_DIMENSIONS=768
-```
-
-If your LLM provider does not support the Responses API, use:
-
-```bash
-LLM_API_STYLE=chat
-OPENAI_BASE_URL=https://your-provider.example/v1
-LLM_MODEL=your-chat-model
-```
-
-## Development
-
-```bash
-pnpm dev
-```
-
-The Vite dev server runs at `http://localhost:5173` for local frontend iteration. The Docker app entrypoint runs at `https://localhost:8787`.
-
-## Verification
-
-```bash
-pnpm typecheck
-pnpm test:unit
-pnpm build
-pnpm e2e:docker
-pnpm coverage:docker
-```
-
-The Docker-backed E2E flow starts the proxied app stack, refreshes the idempotent demo seed, and runs Playwright in a test container:
-
-```bash
-pnpm e2e:docker
-```
-
-Clean E2E-created database rows while keeping the seeded admin account:
-
-```bash
-pnpm db:test:clean
-```
-
-Seed local demo data for Australian candidates and realistic job postings:
+Start the Docker database, then run:
 
 ```bash
 pnpm db:seed:demo
 ```
 
-The demo seed is idempotent and replaces only its owned rows. It creates 100 Australian demo users, 200 Australian job postings, 100 resume versions, and 100 completed applications across veterinary, software, technician, lab, accounting, admin, operations, marketing, compliance, and related veterinary-industry roles. Demo user accounts share `DemoUserPassword123` unless `DEMO_USER_PASSWORD` is set.
+This command creates:
 
-The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `https://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.
+- 100 demo candidate accounts
+- 200 demo roles
+- 100 resume versions
+- 100 completed applications
+
+Demo candidate accounts use this password unless you set `DEMO_USER_PASSWORD` first:
+
+```text
+DemoUserPassword123
+```
+
+The command resets existing demo and test data before seeding. It keeps the admin account from `.env`.
+
+### Reset demo data
+
+To remove demo and test data without adding new demo rows:
+
+```bash
+pnpm db:test:clean
+```
+
+This removes:
+
+- Non-admin users
+- Resume versions
+- Applications and candidate assessments
+- Job postings
+- Sessions
+- Saved analysis cache
+- Search profiles
+
+It keeps admin users, so you can still sign in with the admin account from `.env`.
+
+To reset everything, including the database volume:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Use this only when you want to delete all local Roos data.
+
+## How Data Is Stored
+
+- PostgreSQL stores users, roles, applications, resume versions, and analysis results.
+- Resume uploads are versioned. A new upload does not replace older uploads.
+- Candidates cannot apply to the same role again unless they upload a newer resume version.
+- Resume text is redacted before it is stored for analysis or sent to AI providers.
+- Docker stores database data in the `postgres_data` volume.
+
+## Troubleshooting
+
+### The app opens, but analysis fails
+
+Check that your AI provider is running and that `.env` points to it correctly.
+
+For LM Studio with Docker Compose:
+
+```bash
+OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+LLM_API_STYLE=chat
+```
+
+### PostgreSQL is unhealthy
+
+If you changed database passwords after creating the Docker volume, reset the local database:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+This deletes local Roos data.
+
+### Browser warns about HTTPS
+
+Docker creates a local certificate in `data/tls/`. The warning is normal for local development. You can continue in the browser or install `data/tls/root_ca.crt` into your system trust store.
+
+## Tests
+
+Run fast checks:
+
+```bash
+pnpm typecheck
+pnpm test:unit
+```
+
+Run the production build:
+
+```bash
+pnpm build
+```
+
+Run end-to-end tests in Docker:
+
+```bash
+pnpm e2e:docker
+```
+
+## Project Docs
+
+- Product requirements: [docs/requirements.md](./docs/requirements.md)
+- Architecture notes: [docs/architecture.md](./docs/architecture.md)
+- Agent workflow notes: [AGENT.md](./AGENT.md)
 
 ## License
 

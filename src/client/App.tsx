@@ -137,7 +137,7 @@ export const App = () => {
   const [token, setToken] = useState(() => localStorage.getItem(authStorageKey) || "");
   const [user, setUser] = useState<UserRecord | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [loginEmail, setLoginEmail] = useState("admin@example.com");
+  const [loginEmail, setLoginEmail] = useState("admin@example.com.au");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginStatus, setLoginStatus] = useState<Status>("idle");
   const [loginError, setLoginError] = useState("");
@@ -358,6 +358,20 @@ export const App = () => {
     return response;
   };
 
+  const readApiJson = async <T,>(response: Response, fallbackMessage: string): Promise<T> => {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(response.ok ? fallbackMessage : `${fallbackMessage} Refresh and try again.`);
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error((data as { error?: string }).error || fallbackMessage);
+    }
+
+    return data as T;
+  };
+
   const loadJobs = async (activeToken = token, options: { append?: boolean; offset?: number } = {}) => {
     if (!activeToken) {
       setJobs([]);
@@ -430,13 +444,9 @@ export const App = () => {
       const response = await authenticatedFetch(`/api/admin/users?${params.toString()}`, {
         headers: authHeaders(activeToken)
       });
-      const data = await response.json();
+      const data = await readApiJson<AdminUsersResponse>(response, "User search failed.");
 
-      if (!response.ok) {
-        throw new Error(data.error || "User search failed.");
-      }
-
-      const users = (data as AdminUsersResponse).users;
+      const users = data.users;
       setAdminUsers((current) => options.append ? appendUniqueById(current, users) : users);
       setAdminUsersHasMore(users.length === listPageSize);
       setAdminUsersStatus("success");
@@ -471,13 +481,9 @@ export const App = () => {
       const response = await authenticatedFetch(`/api/admin/users?${params.toString()}`, {
         headers: authHeaders(activeToken)
       });
-      const data = await response.json();
+      const data = await readApiJson<AdminUsersResponse>(response, "Candidate search failed.");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Candidate search failed.");
-      }
-
-      setCandidateResults((data as AdminUsersResponse).users);
+      setCandidateResults(data.users);
       setCandidateStatus("success");
     } catch (caught) {
       setCandidateStatus("error");
@@ -1680,7 +1686,7 @@ export const App = () => {
                       type="email"
                       value={loginEmail}
                       onChange={(event) => setLoginEmail(event.target.value)}
-                      placeholder="admin@example.com"
+                      placeholder="admin@example.com.au"
                     />
                   </div>
                 </label>

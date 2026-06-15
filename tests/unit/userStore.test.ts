@@ -229,18 +229,18 @@ describe("userStore", () => {
   });
 
   it("upserts an admin with normalized email", async () => {
-    const adminRow = { ...userRow, email: "admin@example.com", role: "admin" as const };
+    const adminRow = { ...userRow, email: "admin@example.com.au", role: "admin" as const };
     queryPostgres.mockResolvedValueOnce({ rows: [adminRow] });
 
     await expect(
-      upsertAdminUser({ name: "Admin", email: "ADMIN@EXAMPLE.COM", passwordHash: "hash" })
+      upsertAdminUser({ name: "Admin", email: "ADMIN@EXAMPLE.COM.AU", passwordHash: "hash" })
     ).resolves.toMatchObject({
       role: "admin",
-      email: "admin@example.com"
+      email: "admin@example.com.au"
     });
     expect(queryPostgres).toHaveBeenCalledWith("users.upsertAdmin", [
       "Admin",
-      "admin@example.com",
+      "admin@example.com.au",
       "hash"
     ]);
   });

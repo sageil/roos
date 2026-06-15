@@ -1,12 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
+const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com.au";
 const adminPassword = process.env.ADMIN_PASSWORD || "ChangeThisAdminPassword123";
 const demoUserEmail = process.env.DEMO_USER_EMAIL || "oscar.roberts@example.com.au";
 const demoUserPassword = process.env.DEMO_USER_PASSWORD || "DemoUserPassword123";
 
 const signIn = async (page: Page, email: string, password: string) => {
-  await page.getByPlaceholder("admin@example.com").fill(email);
+  await page.getByPlaceholder("admin@example.com.au").fill(email);
   await page.getByPlaceholder("Account password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 };
