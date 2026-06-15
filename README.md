@@ -220,4 +220,10 @@ The Docker-backed E2E flow starts the proxied app stack and runs Playwright in a
 pnpm e2e:docker
 ```
 
+Clean E2E-created database rows while keeping the seeded admin account:
+
+```bash
+pnpm db:test:clean
+```
+
 The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `https://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.
