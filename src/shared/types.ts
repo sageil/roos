@@ -58,10 +58,20 @@ export type AnalyzeResponse = {
     characterCount: number;
     chunkCount: number;
   };
+  privacyRedaction: PrivacyRedactionSummary;
   models: {
     llm: string;
     embedding: string;
   };
+};
+
+export type PrivacyRedactionSummary = {
+  name: number;
+  email: number;
+  phone: number;
+  address: number;
+  link: number;
+  total: number;
 };
 
 export type JobRecord = {
@@ -188,6 +198,7 @@ export type UpdateProfileResponse = {
 
 export type UploadResumeResponse = {
   resume: ResumeVersionRecord;
+  privacyRedaction: PrivacyRedactionSummary;
 };
 
 export type ComponentHealth = {

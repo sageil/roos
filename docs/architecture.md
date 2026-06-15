@@ -68,13 +68,16 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 ## Analysis Flow
 
 1. Extract resume text from upload.
-2. Chunk resume text.
-3. Create embeddings for the job query and resume chunks.
-4. Store resume chunk embeddings in PostgreSQL with pgvector.
-5. Rank evidence chunks using vector similarity.
-6. Ask the LLM for structured HR assessment fields.
-7. Compute final fit score and fit level deterministically in the server.
-8. Persist job result, analysis JSON, recommendation, models, and chunk count.
+2. Redact the authenticated user's profile name and email plus user-confirmed phone, address, and personal link values.
+3. Replace persisted upload filenames with neutral names that preserve only the extension.
+4. Store only the redacted profile resume text for versioned uploads.
+5. Chunk redacted resume text.
+6. Create embeddings for the job query and redacted resume chunks.
+7. Store redacted resume chunk embeddings in PostgreSQL with pgvector.
+8. Rank evidence chunks using vector similarity.
+9. Ask the LLM for structured HR assessment fields using redacted evidence and redacted resume text.
+10. Compute final fit score and fit level deterministically in the server.
+11. Persist job result, analysis JSON, recommendation, models, and chunk count.
 
 ## Health Flow
 

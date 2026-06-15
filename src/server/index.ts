@@ -11,6 +11,7 @@ import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
+import { redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
 import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
 import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
@@ -42,7 +43,8 @@ const analyzeBodySchema = z.object({
   jobTitle: z.string().trim().optional(),
   targetRole: z.string().trim().optional(),
   applicationDate: z.string().trim().min(4, "Application date is required."),
-  jobDescription: z.string().trim().optional()
+  jobDescription: z.string().trim().optional(),
+  privacyRedactions: z.string().optional()
 }).transform((body) => {
   const jobTitle = body.jobTitle || body.targetRole;
   if (!body.jobPostingId && (!jobTitle || jobTitle.length < 2)) {
@@ -53,9 +55,19 @@ const analyzeBodySchema = z.object({
     jobPostingId: body.jobPostingId,
     jobTitle: jobTitle ?? "",
     applicationDate: body.applicationDate,
-    jobDescription: body.jobDescription
+    jobDescription: body.jobDescription,
+    privacyRedactions: body.privacyRedactions
   };
 });
+
+const privacyRedactionSchema = z.object({
+  name: z.string().trim().max(200).optional(),
+  names: z.array(z.string().trim().max(200)).max(5).default([]),
+  emails: z.array(z.string().trim().max(320)).max(10).default([]),
+  phones: z.array(z.string().trim().max(80)).max(10).default([]),
+  addressLines: z.array(z.string().trim().max(300)).max(12).default([]),
+  links: z.array(z.string().trim().max(300)).max(10).default([])
+}).default({});
 
 const registerBodySchema = z.object({
   name: z.string().trim().min(2, "Name is required.").max(120, "Name is too long."),
@@ -109,6 +121,42 @@ const bearerToken = (request: express.Request) => {
   const header = request.header("authorization") || "";
   const [scheme, token] = header.split(" ");
   return scheme?.toLowerCase() === "bearer" && token ? token : undefined;
+};
+
+const parsePrivacyRedactions = (raw: unknown): PrivacyRedactionInput => {
+  if (!raw) {
+    return {};
+  }
+
+  if (Array.isArray(raw)) {
+    return parsePrivacyRedactions(raw[0]);
+  }
+
+  if (typeof raw !== "string") {
+    return privacyRedactionSchema.parse(raw);
+  }
+
+  try {
+    return privacyRedactionSchema.parse(JSON.parse(raw));
+  } catch (_error) {
+    throw new Error("Privacy redaction values are invalid.");
+  }
+};
+
+const buildPrivacyRedactions = (user: UserRecord, submitted: PrivacyRedactionInput): PrivacyRedactionInput => ({
+  names: [user.name, submitted.name, ...(submitted.names ?? [])].filter(
+    (name): name is string => Boolean(name?.trim())
+  ),
+  emails: [user.email, ...(submitted.emails ?? [])],
+  phones: submitted.phones ?? [],
+  addressLines: submitted.addressLines ?? [],
+  links: submitted.links ?? []
+});
+
+const safeResumeFileName = (originalName: string) => {
+  const extension = path.extname(originalName).toLowerCase();
+  const allowedExtensions = new Set([".pdf", ".docx", ".txt", ".md"]);
+  return `resume${allowedExtensions.has(extension) ? extension : ""}`;
 };
 
 const requireAuth: express.RequestHandler = async (request, response, next) => {
@@ -307,22 +355,32 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
       return;
     }
 
-    const resumeText = await extractResumeText(request.file);
-    if (resumeText.length < 80) {
+    const extractedResumeText = await extractResumeText(request.file);
+    if (extractedResumeText.length < 80) {
       response.status(400).json({ error: "The uploaded resume did not contain enough readable text." });
+      return;
+    }
+
+    const { text: resumeText, summary: privacyRedaction } = redactResumePrivacy(
+      extractedResumeText,
+      buildPrivacyRedactions(user, parsePrivacyRedactions(request.body.privacyRedactions))
+    );
+
+    if (resumeText.length < 80) {
+      response.status(400).json({ error: "The uploaded resume only contained privacy details after redaction." });
       return;
     }
 
     const resume = await createResumeVersion({
       userId: user.id,
-      fileName: request.file.originalname,
+      fileName: safeResumeFileName(request.file.originalname),
       contentType: request.file.mimetype,
       characterCount: resumeText.length,
       resumeText
     });
 
     refreshUserMatchProfileAfterWrite(user.id);
-    response.status(201).json({ resume });
+    response.status(201).json({ resume, privacyRedaction });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Resume upload failed.";
     response.status(400).json({ error: message });
@@ -414,10 +472,20 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
 
     const jobTitle = selectedPosting?.title ?? body.jobTitle;
     const jobDescription = selectedPosting?.description ?? body.jobDescription;
-    const resumeText = await extractResumeText(request.file);
+    const extractedResumeText = await extractResumeText(request.file);
+
+    if (extractedResumeText.length < 80) {
+      response.status(400).json({ error: "The uploaded resume did not contain enough readable text." });
+      return;
+    }
+
+    const { text: resumeText, summary: privacyRedaction } = redactResumePrivacy(
+      extractedResumeText,
+      buildPrivacyRedactions(user, parsePrivacyRedactions(body.privacyRedactions))
+    );
 
     if (resumeText.length < 80) {
-      response.status(400).json({ error: "The uploaded resume did not contain enough readable text." });
+      response.status(400).json({ error: "The uploaded resume only contained privacy details after redaction." });
       return;
     }
 
@@ -427,7 +495,7 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
       applicationDate: body.applicationDate,
       jobTitle,
       jobDescription,
-      resumeFileName: request.file.originalname,
+      resumeFileName: safeResumeFileName(request.file.originalname),
       characterCount: resumeText.length
     });
 
@@ -450,10 +518,11 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
         job,
         analysis,
         resumeStats: {
-          fileName: request.file.originalname,
+          fileName: safeResumeFileName(request.file.originalname),
           characterCount: resumeText.length,
           chunkCount
         },
+        privacyRedaction,
         models: {
           llm: config.llmModel,
           embedding: config.embeddingModel

@@ -15,6 +15,9 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 - Profile resume uploads are versioned append-only records.
 - Uploading a new resume must never replace or overwrite an older resume version.
 - Users can review resume versions from their profile.
+- Resume uploads must prompt users to confirm name, email, phone, address, and personal link values that should be removed.
+- Confirmed privacy values and the authenticated user's profile name and email must be redacted before resume text is stored, embedded, cached, indexed, or sent to an LLM.
+- Persisted resume filenames must use neutral names that preserve only the file type extension.
 
 ## Job Postings And Applications
 
@@ -49,4 +52,4 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 
 - Sessions store hashed bearer tokens only.
 - Passwords are hashed with scrypt.
-- Do not expose secrets, bearer tokens, raw provider API keys, generated TLS material, or full resume text unnecessarily.
+- Do not expose secrets, bearer tokens, raw provider API keys, generated TLS material, or unredacted resume text.

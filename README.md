@@ -17,6 +17,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users have a dedicated login page and profile page.
 - Users have a dedicated jobs page to search roles by exact text and semantic meaning before matching a resume.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
+- Resume uploads ask users to confirm personal identifiers and redact them before storage, embedding, cache lookup, or LLM analysis.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
 - Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles.
 - Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
@@ -127,6 +128,8 @@ The System Health page probes app instances from the API container using `APP_IN
 
 Repeated analyses for the same normalized resume text, job title, job description, LLM model, and embedding model reuse the cached structured analysis. Each application still gets its own job row and evidence chunks, but the fit score and recommendation remain consistent for identical inputs.
 
+Resume privacy redaction runs locally in the API before any resume text is stored or sent to an embedding or LLM provider. The server always includes the authenticated user's profile name and email in the redaction set, and the upload UI asks users to confirm any phone numbers, address lines, and personal links that should also be removed. Persisted upload filenames are replaced with neutral names such as `resume.pdf` to avoid leaking names through metadata.
+
 For OpenAI:
 
 ```bash
@@ -210,8 +213,10 @@ The Vite dev server runs at `http://localhost:5173` for local frontend iteration
 
 ```bash
 pnpm typecheck
+pnpm test:unit
 pnpm build
 pnpm e2e:docker
+pnpm coverage:docker
 ```
 
 The Docker-backed E2E flow starts the proxied app stack and runs Playwright in a test container:

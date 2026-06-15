@@ -71,12 +71,44 @@ type HealthResponse = {
 
 const authStorageKey = "resume-analyzer-token";
 
+type PrivacyRedactionForm = {
+  name: string;
+  emails: string;
+  phones: string;
+  addressLines: string;
+  links: string;
+};
+
 const today = () => {
   const date = new Date();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${month}-${day}`;
 };
+
+const defaultPrivacyRedactionForm = (user?: UserRecord | null): PrivacyRedactionForm => ({
+  name: user?.name ?? "",
+  emails: user?.email ?? "",
+  phones: "",
+  addressLines: "",
+  links: ""
+});
+
+const splitPrivacyLines = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const serializePrivacyRedactions = (form: PrivacyRedactionForm) => ({
+  name: form.name.trim(),
+  emails: splitPrivacyLines(form.emails),
+  phones: splitPrivacyLines(form.phones),
+  addressLines: splitPrivacyLines(form.addressLines),
+  links: splitPrivacyLines(form.links)
+});
+
+const redactionTotalLabel = (total: number) => `${total} privacy ${total === 1 ? "value" : "values"} removed`;
 
 const fitLabel = (score: number) => {
   if (score >= 80) {
@@ -124,6 +156,75 @@ const StatusBadge = ({
   tone?: "neutral" | "success" | "warning" | "danger";
   children: React.ReactNode;
 }) => <span className={`status-badge ${tone}`}>{children}</span>;
+
+const PrivacyReviewFields = ({
+  value,
+  onChange
+}: {
+  value: PrivacyRedactionForm;
+  onChange: (value: PrivacyRedactionForm) => void;
+}) => {
+  const update = (field: keyof PrivacyRedactionForm) => (
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => onChange({ ...value, [field]: event.target.value });
+
+  return (
+    <section className="privacy-review">
+      <div className="privacy-review-heading">
+        <ShieldCheck size={18} />
+        <div>
+          <strong>Privacy review</strong>
+          <span>Confirm personal details to remove before storage and analysis.</span>
+        </div>
+      </div>
+
+      <label className="field compact-field">
+        <span>Name to remove</span>
+        <input value={value.name} onChange={update("name")} placeholder="Candidate name" />
+      </label>
+
+      <label className="field compact-field">
+        <span>Emails to remove</span>
+        <textarea
+          className="compact-textarea"
+          value={value.emails}
+          onChange={update("emails")}
+          placeholder="One email per line"
+        />
+      </label>
+
+      <label className="field compact-field">
+        <span>Phone numbers to remove</span>
+        <textarea
+          className="compact-textarea"
+          value={value.phones}
+          onChange={update("phones")}
+          placeholder="One phone number per line"
+        />
+      </label>
+
+      <label className="field compact-field">
+        <span>Address lines to remove</span>
+        <textarea
+          className="compact-textarea"
+          value={value.addressLines}
+          onChange={update("addressLines")}
+          placeholder="One confirmed address line per line"
+        />
+      </label>
+
+      <label className="field compact-field">
+        <span>Links to remove</span>
+        <textarea
+          className="compact-textarea"
+          value={value.links}
+          onChange={update("links")}
+          placeholder="Portfolio, LinkedIn, or personal URLs"
+        />
+      </label>
+    </section>
+  );
+};
 
 const ListBlock = ({
   title,
@@ -1053,6 +1154,7 @@ const SystemHealthPanel = ({
 
 export const App = () => {
   const [file, setFile] = useState<File | null>(null);
+  const [analysisPrivacy, setAnalysisPrivacy] = useState<PrivacyRedactionForm>(() => defaultPrivacyRedactionForm());
   const [jobTitle, setJobTitle] = useState("Senior Software Engineer");
   const [applicationDate, setApplicationDate] = useState(today());
   const [jobDescription, setJobDescription] = useState("");
@@ -1089,9 +1191,11 @@ export const App = () => {
   const [profileError, setProfileError] = useState("");
   const [resumeVersions, setResumeVersions] = useState<ResumeVersionRecord[]>([]);
   const [resumeUploadFile, setResumeUploadFile] = useState<File | null>(null);
+  const [resumeUploadPrivacy, setResumeUploadPrivacy] = useState<PrivacyRedactionForm>(() => defaultPrivacyRedactionForm());
   const [resumeUploadInputKey, setResumeUploadInputKey] = useState(0);
   const [resumeUploadStatus, setResumeUploadStatus] = useState<Status>("idle");
   const [resumeUploadError, setResumeUploadError] = useState("");
+  const [resumeUploadRedactionTotal, setResumeUploadRedactionTotal] = useState<number | null>(null);
   const [registrationName, setRegistrationName] = useState("");
   const [registrationEmail, setRegistrationEmail] = useState("");
   const [registrationPassword, setRegistrationPassword] = useState("");
@@ -1115,6 +1219,8 @@ export const App = () => {
     setUser(nextUser);
     setProfileName(nextUser.name);
     setProfileEmail(nextUser.email);
+    setAnalysisPrivacy(defaultPrivacyRedactionForm(nextUser));
+    setResumeUploadPrivacy(defaultPrivacyRedactionForm(nextUser));
     setActiveView("dashboard");
   };
 
@@ -1140,7 +1246,10 @@ export const App = () => {
     setActiveView("dashboard");
     setProfileName("");
     setProfileEmail("");
+    setAnalysisPrivacy(defaultPrivacyRedactionForm());
+    setResumeUploadPrivacy(defaultPrivacyRedactionForm());
     setResumeVersions([]);
+    setResumeUploadRedactionTotal(null);
   };
 
   const loadJobs = async (activeToken = token) => {
@@ -1305,6 +1414,8 @@ export const App = () => {
     setUser(data.user);
     setProfileName(data.user.name);
     setProfileEmail(data.user.email);
+    setAnalysisPrivacy(defaultPrivacyRedactionForm(data.user));
+    setResumeUploadPrivacy(defaultPrivacyRedactionForm(data.user));
     setResumeVersions(data.resumes);
   };
 
@@ -1426,6 +1537,7 @@ export const App = () => {
     payload.set("jobTitle", jobTitle);
     payload.set("applicationDate", applicationDate);
     payload.set("jobDescription", jobDescription);
+    payload.set("privacyRedactions", JSON.stringify(serializePrivacyRedactions(analysisPrivacy)));
 
     setStatus("loading");
     try {
@@ -1442,6 +1554,7 @@ export const App = () => {
 
       setResult(data);
       setStatus("success");
+      setAnalysisPrivacy(defaultPrivacyRedactionForm(user));
       void loadJobs();
       void loadJobPostings();
       if (user.role === "admin") {
@@ -1592,6 +1705,8 @@ export const App = () => {
       setUser(updated.user);
       setProfileName(updated.user.name);
       setProfileEmail(updated.user.email);
+      setAnalysisPrivacy(defaultPrivacyRedactionForm(updated.user));
+      setResumeUploadPrivacy(defaultPrivacyRedactionForm(updated.user));
       setProfileStatus("success");
     } catch (caught) {
       setProfileStatus("error");
@@ -1611,7 +1726,9 @@ export const App = () => {
 
     const payload = new FormData();
     payload.set("resume", resumeUploadFile);
+    payload.set("privacyRedactions", JSON.stringify(serializePrivacyRedactions(resumeUploadPrivacy)));
     setResumeUploadStatus("loading");
+    setResumeUploadRedactionTotal(null);
 
     try {
       const response = await fetch("/api/resumes", {
@@ -1628,6 +1745,8 @@ export const App = () => {
       const uploaded = data as UploadResumeResponse;
       setResumeVersions((current) => [uploaded.resume, ...current]);
       setResumeUploadFile(null);
+      setResumeUploadPrivacy(defaultPrivacyRedactionForm(user));
+      setResumeUploadRedactionTotal(uploaded.privacyRedaction.total);
       setResumeUploadInputKey((current) => current + 1);
       setResumeUploadStatus("success");
     } catch (caught) {
@@ -2096,6 +2215,8 @@ export const App = () => {
               />
             </label>
 
+            {file && <PrivacyReviewFields value={analysisPrivacy} onChange={setAnalysisPrivacy} />}
+
             <label className="field">
               <span>Job posting</span>
               <select
@@ -2408,6 +2529,9 @@ export const App = () => {
                       onChange={(event) => setResumeUploadFile(event.target.files?.[0] ?? null)}
                     />
                   </label>
+                  {resumeUploadFile && (
+                    <PrivacyReviewFields value={resumeUploadPrivacy} onChange={setResumeUploadPrivacy} />
+                  )}
                   <button className="secondary-button" disabled={resumeUploadStatus === "loading"} type="submit">
                     {resumeUploadStatus === "loading" ? <Loader2 className="spin" size={18} /> : <Upload size={18} />}
                     Upload new version
@@ -2417,7 +2541,10 @@ export const App = () => {
                 {resumeUploadStatus === "success" && (
                   <div className="notice success">
                     <CheckCircle2 size={18} />
-                    <span>Resume version saved without replacing previous versions.</span>
+                    <span>
+                      Resume version saved without replacing previous versions.
+                      {resumeUploadRedactionTotal !== null ? ` ${redactionTotalLabel(resumeUploadRedactionTotal)}.` : ""}
+                    </span>
                   </div>
                 )}
 
@@ -2514,6 +2641,7 @@ export const App = () => {
                   <span>
                     Job #{result.job.id} | {result.job.applicationDate} |{" "}
                     {result.resumeStats.fileName} | {result.resumeStats.chunkCount} chunks |{" "}
+                    {redactionTotalLabel(result.privacyRedaction.total)} |{" "}
                     {result.models.embedding}
                   </span>
                 </div>
