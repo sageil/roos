@@ -71,7 +71,14 @@ describe("jobPostingStore", () => {
   it("lists postings with match aggregates", async () => {
     queryPostgres.mockResolvedValueOnce({ rows: [jobPostingRow] });
 
-    await expect(listJobPostings({ includeArchived: true })).resolves.toEqual([
+    await expect(
+      listJobPostings({
+        includeArchived: true,
+        search: " platform ",
+        semanticJobPostingIds: [4, 8],
+        limit: 25
+      })
+    ).resolves.toEqual([
       {
         id: 4,
         createdByUserId: 1,
@@ -86,7 +93,12 @@ describe("jobPostingStore", () => {
         topFitScore: 91
       }
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("jobPostings.list", [true]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobPostings.list", [
+      true,
+      "platform",
+      [4, 8],
+      25
+    ]);
   });
 
   it("finds active postings and returns undefined for missing postings", async () => {

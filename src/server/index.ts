@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { UserRecord } from "../shared/types.js";
 import { analyzeResume } from "./analysis.js";
 import { config } from "./config.js";
+import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "./jobPostingMatchProfiles.js";
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
@@ -91,6 +92,11 @@ const adminUsersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
+const jobPostingsQuerySchema = z.object({
+  search: z.string().trim().max(160).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
+});
+
 type AuthenticatedRequest = express.Request & {
   user: UserRecord;
   token: string;
@@ -147,6 +153,16 @@ const refreshUserMatchProfileAfterWrite = (userId: number) => {
   });
 };
 
+const refreshJobPostingMatchProfileAfterWrite = (jobPostingId: number) => {
+  void refreshJobPostingMatchProfile(jobPostingId).catch((error) => {
+    console.warn(
+      `Job posting match profile refresh failed for posting ${jobPostingId}: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+  });
+};
+
 app.get("/api/health", async (_request, response) => {
   let postgres: { ok: boolean; extension: string; error?: string };
   try {
@@ -183,8 +199,29 @@ app.get("/api/jobs", requireAuth, async (request, response) => {
 
 app.get("/api/job-postings", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
+  const query = jobPostingsQuerySchema.parse(request.query);
+  const search = query.search ?? "";
+  let semanticJobPostingIds: number[] = [];
+
+  try {
+    semanticJobPostingIds = (await matchJobPostingsBySemanticQuery(search, query.limit ?? 100)).map(
+      (match) => match.jobPostingId
+    );
+  } catch (error) {
+    console.warn(
+      `Semantic job posting search failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+  }
+
   response.json({
-    jobPostings: await listJobPostings({ includeArchived: user.role === "admin" })
+    jobPostings: await listJobPostings({
+      includeArchived: user.role === "admin",
+      search,
+      semanticJobPostingIds,
+      limit: query.limit ?? 100
+    })
   });
 });
 
@@ -350,6 +387,7 @@ app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, r
       skills: body.skills
     });
 
+    refreshJobPostingMatchProfileAfterWrite(jobPosting.id);
     response.status(201).json({ jobPosting });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Job posting creation failed.";

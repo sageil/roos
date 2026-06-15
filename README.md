@@ -15,6 +15,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Supports user and admin accounts with server-side password hashing.
 - Users can review their own resumes, applied jobs, LLM match analysis, evidence, and recommendations.
 - Users have a dedicated login page and profile page.
+- Users have a dedicated jobs page to search roles by exact text and semantic meaning before matching a resume.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
 - Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles.
@@ -99,14 +100,16 @@ The app creates the `vector` extension and required tables on startup.
 
 Database SQL is kept outside the TypeScript store:
 
-- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, `match_resume_chunks(...)`, and `match_user_match_profiles(...)`.
+- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, `match_resume_chunks(...)`, `match_user_match_profiles(...)`, and `match_job_posting_match_profiles(...)`.
 - `sql/analysis_cache/*.sql` contains cached analysis lookup and upsert queries.
 - `sql/jobs/*.sql` contains job CRUD queries.
+- `sql/job_posting_match_profiles/*.sql` contains semantic role search profile refresh and matching calls.
 - `sql/users/*.sql` and `sql/sessions/*.sql` contain account, role, and session queries.
 - `sql/resume_versions/*.sql` contains versioned profile resume upload queries.
 - `sql/resume_chunks/*.sql` contains embedding upserts and vector search calls.
 - `sql/user_match_profiles/*.sql` contains semantic admin user search profile refresh and matching calls.
 - Admin semantic user search stores `text-embedding-nomic-embed-text-v1.5-embedding` profiles as `vector(768)` so pgvector can use IVFFlat.
+- Semantic role search stores job posting profiles as `vector(768)` for the same IVFFlat-backed search path.
 
 Admin seeding is controlled by:
 

@@ -223,6 +223,17 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     const postingCard = page.locator(".posting-card").filter({ hasText: postingTitle });
     await expect(postingCard).toBeVisible();
     await expect(postingCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Jobs", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Find roles" })).toBeVisible();
+    await page
+      .getByPlaceholder("financial controls, customer success, cloud operations...")
+      .fill("PostgreSQL");
+    const searchResult = page.locator(".posting-card").filter({ hasText: postingTitle });
+    await expect(searchResult).toBeVisible();
+    await searchResult.getByRole("button", { name: "Match my resume" }).click();
+    await expect(page.getByRole("button", { name: "Analyze resume" })).toBeVisible();
+    await expect(page.getByLabel("Job title")).toHaveValue(postingTitle);
   });
 
   test("expands profile applications with stored analysis details", async ({ page, request }) => {

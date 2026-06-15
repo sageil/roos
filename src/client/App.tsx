@@ -651,6 +651,104 @@ const AdminUsersPanel = ({
   </section>
 );
 
+const JobSearchPanel = ({
+  postings,
+  search,
+  status,
+  error,
+  onSearchChange,
+  onRefresh,
+  onUsePosting
+}: {
+  postings: JobPostingRecord[];
+  search: string;
+  status: Status;
+  error: string;
+  onSearchChange: (value: string) => void;
+  onRefresh: () => void;
+  onUsePosting: (posting: JobPostingRecord) => void;
+}) => (
+  <section className="jobs-view">
+    <section className="surface-card full">
+      <div className="panel-heading split-heading">
+        <div>
+          <SearchCheck size={19} />
+          <h2>Find roles</h2>
+        </div>
+        <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
+          {status === "loading" ? "Searching" : `${postings.length} shown`}
+        </StatusBadge>
+      </div>
+
+      <div className="admin-user-toolbar">
+        <label className="field">
+          <span>Search roles by title, skills, responsibilities, or related meaning</span>
+          <div className="input-with-icon">
+            <Search size={18} />
+            <input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="financial controls, customer success, cloud operations..."
+            />
+          </div>
+        </label>
+        <button className="secondary-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
+          {status === "loading" ? <Loader2 className="spin" size={18} /> : <SearchCheck size={18} />}
+          Search roles
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="notice error">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="posting-grid">
+        {postings.length === 0 ? (
+          <p className="muted">No roles match the current search.</p>
+        ) : (
+          postings.map((posting) => (
+            <article className="posting-card" key={posting.id}>
+              <div className="posting-card-header">
+                <div>
+                  <strong>{posting.title}</strong>
+                  <span>{posting.status} | {posting.createdAt}</span>
+                </div>
+                <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
+                  {posting.matchCount ?? 0} applications
+                </StatusBadge>
+              </div>
+
+              {posting.skills.length > 0 && (
+                <div className="tag-list">
+                  {posting.skills.map((skill) => (
+                    <span className="tag-chip" key={skill}>{skill}</span>
+                  ))}
+                </div>
+              )}
+
+              <p>{posting.description}</p>
+
+              <div className="posting-metrics">
+                <StatusBadge>Avg {posting.averageFitScore ?? 0}/100</StatusBadge>
+                <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
+                  Top {posting.topFitScore ?? 0}/100
+                </StatusBadge>
+                <button className="secondary-button" type="button" onClick={() => onUsePosting(posting)}>
+                  <Target size={16} />
+                  Match my resume
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  </section>
+);
+
 const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
   <section className="admin-overview">
     <div className="panel-heading">
@@ -926,6 +1024,10 @@ export const App = () => {
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [jobPostings, setJobPostings] = useState<JobPostingRecord[]>([]);
+  const [jobSearchResults, setJobSearchResults] = useState<JobPostingRecord[]>([]);
+  const [jobSearch, setJobSearch] = useState("");
+  const [jobSearchStatus, setJobSearchStatus] = useState<Status>("idle");
+  const [jobSearchError, setJobSearchError] = useState("");
   const [selectedJobPostingId, setSelectedJobPostingId] = useState("");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [token, setToken] = useState(() => localStorage.getItem(authStorageKey) || "");
@@ -943,7 +1045,7 @@ export const App = () => {
   const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null);
   const [systemHealthStatus, setSystemHealthStatus] = useState<Status>("idle");
   const [systemHealthError, setSystemHealthError] = useState("");
-  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs" | "adminUsers" | "systemHealth">("dashboard");
+  const [activeView, setActiveView] = useState<"dashboard" | "jobs" | "profile" | "adminJobs" | "adminUsers" | "systemHealth">("dashboard");
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
@@ -985,6 +1087,10 @@ export const App = () => {
     setUser(null);
     setJobs([]);
     setJobPostings([]);
+    setJobSearchResults([]);
+    setJobSearch("");
+    setJobSearchStatus("idle");
+    setJobSearchError("");
     setAdminOverview(null);
     setAdminUsers([]);
     setAdminUsersSearch("");
@@ -1095,6 +1201,7 @@ export const App = () => {
   const loadJobPostings = async (activeToken = token) => {
     if (!activeToken) {
       setJobPostings([]);
+      setJobSearchResults([]);
       return;
     }
 
@@ -1107,6 +1214,41 @@ export const App = () => {
 
     const data = (await response.json()) as JobPostingsResponse;
     setJobPostings(data.jobPostings);
+    if (!jobSearch.trim()) {
+      setJobSearchResults(data.jobPostings);
+    }
+  };
+
+  const loadJobSearch = async (activeToken = token, search = jobSearch) => {
+    if (!activeToken) {
+      setJobSearchResults([]);
+      return;
+    }
+
+    setJobSearchError("");
+    setJobSearchStatus("loading");
+    try {
+      const params = new URLSearchParams();
+      const trimmedSearch = search.trim();
+      if (trimmedSearch) {
+        params.set("search", trimmedSearch);
+      }
+
+      const response = await fetch(`/api/job-postings${params.size ? `?${params.toString()}` : ""}`, {
+        headers: authHeaders(activeToken)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Job search failed.");
+      }
+
+      setJobSearchResults((data as JobPostingsResponse).jobPostings);
+      setJobSearchStatus("success");
+    } catch (caught) {
+      setJobSearchStatus("error");
+      setJobSearchError(caught instanceof Error ? caught.message : "Job search failed.");
+    }
   };
 
   const loadProfile = async (activeToken = token) => {
@@ -1193,6 +1335,18 @@ export const App = () => {
 
     return () => window.clearTimeout(timeout);
   }, [activeView, adminUsersSearch, token, user?.role]);
+
+  useEffect(() => {
+    if (!token || activeView !== "jobs") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadJobSearch(token, jobSearch);
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeView, jobSearch, token]);
 
   const fileLabel = useMemo(() => {
     if (!file) {
@@ -1364,6 +1518,11 @@ export const App = () => {
     await loadAdminUsers();
   };
 
+  const openJobs = async () => {
+    setActiveView("jobs");
+    await loadJobSearch();
+  };
+
   const openSystemHealth = async () => {
     setActiveView("systemHealth");
     await loadSystemHealth();
@@ -1481,6 +1640,9 @@ export const App = () => {
 
       const created = data as CreateJobPostingResponse;
       setJobPostings((current) => [created.jobPosting, ...current]);
+      if (!jobSearch.trim()) {
+        setJobSearchResults((current) => [created.jobPosting, ...current]);
+      }
       setSelectedJobPostingId(String(created.jobPosting.id));
       setNewPostingTitle("");
       setNewPostingDescription("");
@@ -1692,6 +1854,10 @@ export const App = () => {
           <button className="nav-button" type="button" onClick={() => setActiveView("dashboard")}>
             <ClipboardList size={16} />
             Dashboard
+          </button>
+          <button className="nav-button" type="button" onClick={openJobs}>
+            <SearchCheck size={16} />
+            Jobs
           </button>
           {user.role === "admin" && (
             <>
@@ -1964,6 +2130,23 @@ export const App = () => {
         </aside>
 
         <section className="results-column">
+          {activeView === "jobs" && (
+            <JobSearchPanel
+              postings={jobSearchResults}
+              search={jobSearch}
+              status={jobSearchStatus}
+              error={jobSearchError}
+              onSearchChange={setJobSearch}
+              onRefresh={() => void loadJobSearch()}
+              onUsePosting={(posting) => {
+                setSelectedJobPostingId(String(posting.id));
+                setJobTitle(posting.title);
+                setJobDescription(posting.description);
+                setActiveView("dashboard");
+              }}
+            />
+          )}
+
           {activeView === "adminUsers" && user.role === "admin" && (
             <AdminUsersPanel
               users={adminUsers}

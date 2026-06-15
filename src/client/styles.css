@@ -791,6 +791,11 @@ h1 {
   gap: 14px;
 }
 
+.jobs-view {
+  display: grid;
+  gap: 14px;
+}
+
 .admin-user-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

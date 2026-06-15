@@ -44,6 +44,8 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 - `user_match_profiles` stores one searchable semantic profile per user, built from the latest resume plus application and analysis context.
 - Admin semantic user profiles use `vector(768)` for `text-embedding-nomic-embed-text-v1.5-embedding`; changing embedding dimensions requires a matching schema migration and index rebuild.
 - Admin user search embeds the search phrase, queries `match_user_match_profiles(...)`, and ranks matching users through a pgvector IVFFlat index while preserving exact text search as fallback.
+- `job_posting_match_profiles` stores one searchable semantic profile per job posting, built from the title, skill tags, and description.
+- Job search embeds the search phrase, queries `match_job_posting_match_profiles(...)`, and ranks matching postings through a pgvector IVFFlat index while preserving exact title, description, and skill search as fallback.
 - Analysis cache entries are stored in PostgreSQL.
 - The app connects with the restricted `APP_DB_USER`; it must not connect as the Postgres superuser.
 
@@ -54,6 +56,7 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 - Query files are grouped by domain:
   - `sql/jobs/`
   - `sql/job_postings/`
+  - `sql/job_posting_match_profiles/`
   - `sql/users/`
   - `sql/sessions/`
   - `sql/resume_versions/`

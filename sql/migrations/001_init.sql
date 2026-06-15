@@ -171,6 +171,18 @@ ALTER TABLE user_match_profiles
   ALTER COLUMN embedding TYPE vector(768)
   USING embedding::vector(768);
 
+CREATE TABLE IF NOT EXISTS job_posting_match_profiles (
+  job_posting_id BIGINT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
+  profile_text TEXT NOT NULL,
+  embedding vector(768) NOT NULL,
+  embedding_model TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE job_posting_match_profiles
+  ALTER COLUMN embedding TYPE vector(768)
+  USING embedding::vector(768);
+
 CREATE INDEX IF NOT EXISTS resume_chunks_job_id_idx ON resume_chunks(job_id);
 CREATE INDEX IF NOT EXISTS jobs_user_id_idx ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS jobs_job_posting_id_idx ON jobs(job_posting_id);
@@ -182,6 +194,9 @@ CREATE INDEX IF NOT EXISTS analysis_cache_models_idx ON analysis_cache(llm_model
 CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_model_idx ON user_match_profiles(embedding_model);
 CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_ivfflat_idx
   ON user_match_profiles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_model_idx ON job_posting_match_profiles(embedding_model);
+CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_ivfflat_idx
+  ON job_posting_match_profiles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 CREATE OR REPLACE FUNCTION match_resume_chunks(
   target_job_id BIGINT,
@@ -224,5 +239,26 @@ AS $$
   FROM user_match_profiles ump
   WHERE ump.embedding_model = target_embedding_model
   ORDER BY ump.embedding <=> query_embedding
+  LIMIT match_count
+$$;
+
+CREATE OR REPLACE FUNCTION match_job_posting_match_profiles(
+  query_embedding vector(768),
+  target_embedding_model TEXT,
+  match_count INTEGER
+)
+RETURNS TABLE (
+  job_posting_id BIGINT,
+  score DOUBLE PRECISION
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    jpmp.job_posting_id,
+    1 - (jpmp.embedding <=> query_embedding) AS score
+  FROM job_posting_match_profiles jpmp
+  WHERE jpmp.embedding_model = target_embedding_model
+  ORDER BY jpmp.embedding <=> query_embedding
   LIMIT match_count
 $$;

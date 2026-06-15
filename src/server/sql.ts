@@ -30,6 +30,11 @@ export const queries = {
     getActive: loadSql("job_postings", "get_active.sql"),
     list: loadSql("job_postings", "list.sql")
   },
+  jobPostingMatchProfiles: {
+    source: loadSql("job_posting_match_profiles", "source.sql"),
+    upsert: loadSql("job_posting_match_profiles", "upsert.sql"),
+    match: loadSql("job_posting_match_profiles", "match.sql")
+  },
   users: {
     create: loadSql("users", "create.sql"),
     findByEmail: loadSql("users", "find_by_email.sql"),

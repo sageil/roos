@@ -19,6 +19,8 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 ## Job Postings And Applications
 
 - Admins have a dedicated jobs page to create job postings, enter required skills as tags, and review postings plus candidate matches.
+- Users have a dedicated jobs page to search active job postings by title, skills, responsibilities, and related meaning.
+- Job search must support meaning-based role discovery with embeddings stored in PostgreSQL and queried through pgvector IVFFlat indexes.
 - Admins have a dedicated users page to search users by name, email, resume filename, job history, posting skills, and stored match evidence.
 - Admin user search must support meaning-based skill/profile matching with embeddings stored in PostgreSQL and queried through pgvector IVFFlat indexes.
 - Admins can review each user's latest resume metadata, matched terms, and recent applied jobs from the users page.
