@@ -23,12 +23,18 @@ export const initPostgres = async () => {
         await client.query(migration);
       }
     } finally {
-      if (locked) {
-        await client.query(queries.transactions.advisoryUnlock, [migrationLockId]);
+      try {
+        if (locked) {
+          await client.query(queries.transactions.advisoryUnlock, [migrationLockId]);
+        }
+      } finally {
+        client.release();
       }
-      client.release();
     }
-  })();
+  })().catch((error) => {
+    initialized = undefined;
+    throw error;
+  });
 
   return initialized;
 };

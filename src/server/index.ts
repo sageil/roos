@@ -4,15 +4,17 @@ import multer from "multer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import type { UserRecord } from "../shared/types.js";
+import type { AnalyzeResponse, JobRecord, PrivacyRedactionSummary, ResumeAnalysis, UserRecord } from "../shared/types.js";
 import { analyzeResume } from "./analysis.js";
+import { matchApplicationsBySemanticQuery } from "./applicationSearch.js";
+import { assessmentPdfFileName, buildAssessmentPdf } from "./assessmentPdf.js";
 import { config } from "./config.js";
 import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "./jobPostingMatchProfiles.js";
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
-import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
-import { redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
-import { createResumeVersion, getResumeVersionDownload, listResumeVersions } from "./resumeVersionStore.js";
+import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs, listJobsForPosting, searchJobs, updateJobInterviewQuestions } from "./postgresStore.js";
+import { detectResumePrivacy, redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
+import { createResumeVersion, getLatestResumeVersion, getResumeVersionDownload, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
 import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
 import { extractResumeText } from "./textExtraction.js";
@@ -38,6 +40,8 @@ const upload = multer({
   }
 });
 
+const minimumResumeTextLength = 80;
+
 const analyzeBodySchema = z.object({
   jobPostingId: z.coerce.number().int().positive().optional(),
   jobTitle: z.string().trim().optional(),
@@ -60,6 +64,26 @@ const analyzeBodySchema = z.object({
   };
 });
 
+const analyzeStoredResumeBodySchema = z.object({
+  jobPostingId: z.coerce.number().int().positive().optional(),
+  jobTitle: z.string().trim().optional(),
+  targetRole: z.string().trim().optional(),
+  applicationDate: z.string().trim().min(4, "Application date is required."),
+  jobDescription: z.string().trim().optional()
+}).transform((body) => {
+  const jobTitle = body.jobTitle || body.targetRole;
+  if (!body.jobPostingId && (!jobTitle || jobTitle.length < 2)) {
+    throw new Error("Job title is required.");
+  }
+
+  return {
+    jobPostingId: body.jobPostingId,
+    jobTitle: jobTitle ?? "",
+    applicationDate: body.applicationDate,
+    jobDescription: body.jobDescription
+  };
+});
+
 const privacyRedactionSchema = z.object({
   name: z.string().trim().max(200).optional(),
   names: z.array(z.string().trim().max(200)).max(5).default([]),
@@ -77,7 +101,11 @@ const registerBodySchema = z.object({
     .max(256, "Password is too long.")
     .regex(/[a-z]/, "Password must include a lowercase letter.")
     .regex(/[A-Z]/, "Password must include an uppercase letter.")
-    .regex(/[0-9]/, "Password must include a number.")
+    .regex(/[0-9]/, "Password must include a number."),
+  passwordConfirmation: z.string().min(1, "Retype password.")
+}).refine((body) => body.password === body.passwordConfirmation, {
+  message: "Passwords must match.",
+  path: ["passwordConfirmation"]
 });
 
 const loginBodySchema = z.object({
@@ -109,10 +137,77 @@ const jobPostingsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
+const applicationsQuerySchema = z.object({
+  search: z.string().trim().max(160).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
+});
+
+const updateInterviewQuestionsBodySchema = z.object({
+  interviewQuestions: z.array(z.string().trim().min(1).max(500)).max(20)
+}).transform((body) => ({
+  interviewQuestions: Array.from(new Set(body.interviewQuestions.map((question) => question.trim()).filter(Boolean)))
+}));
+
 type AuthenticatedRequest = express.Request & {
   user: UserRecord;
   token: string;
 };
+
+type RedactedResumeUpload = {
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  fileBytes: Buffer;
+  text: string;
+  privacyRedaction: ReturnType<typeof redactResumePrivacy>["summary"];
+};
+
+type AnalysisResumeSource = {
+  fileName: string;
+  text: string;
+  characterCount: number;
+  privacyRedaction: PrivacyRedactionSummary;
+};
+
+const noPrivacyRedaction = (): PrivacyRedactionSummary => ({
+  name: 0,
+  email: 0,
+  phone: 0,
+  address: 0,
+  link: 0,
+  total: 0
+});
+
+const withoutInterviewQuestions = (analysis: ResumeAnalysis): ResumeAnalysis => {
+  const { interviewQuestions: _hidden, ...visibleAnalysis } = analysis;
+  return visibleAnalysis as ResumeAnalysis;
+};
+
+const hideInterviewQuestionsForUsers = (job: JobRecord): JobRecord => {
+  if (!job.analysis) {
+    return job;
+  }
+
+  return {
+    ...job,
+    analysis: withoutInterviewQuestions(job.analysis)
+  };
+};
+
+const visibleJob = (job: JobRecord, role: UserRecord["role"]): JobRecord =>
+  role === "admin" ? job : hideInterviewQuestionsForUsers(job);
+
+const visibleJobs = (jobs: JobRecord[], role: UserRecord["role"]): JobRecord[] =>
+  role === "admin" ? jobs : jobs.map(hideInterviewQuestionsForUsers);
+
+const visibleAnalyzeResponse = (result: AnalyzeResponse, role: UserRecord["role"]): AnalyzeResponse =>
+  role === "admin"
+    ? result
+    : {
+        ...result,
+        job: visibleJob(result.job, role),
+        analysis: withoutInterviewQuestions(result.analysis)
+      };
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -162,6 +257,120 @@ const safeResumeFileName = (originalName: string) => {
 const downloadResumeFileName = (fileName: string, versionNumber: number) => {
   const extension = path.extname(fileName).toLowerCase();
   return `resume-v${versionNumber}${extension}`;
+};
+
+const parsePositiveIntegerParam = (value: string | string[] | undefined): number => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const parsed = typeof rawValue === "string" ? Number.parseInt(rawValue, 10) : Number.NaN;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
+};
+
+const readRedactedResumeUpload = async ({
+  file,
+  user,
+  privacyRedactions
+}: {
+  file: Express.Multer.File;
+  user: UserRecord;
+  privacyRedactions: unknown;
+}): Promise<RedactedResumeUpload> => {
+  const extractedResumeText = await extractResumeText(file);
+  if (extractedResumeText.length < minimumResumeTextLength) {
+    throw new Error("The uploaded resume did not contain enough readable text.");
+  }
+
+  const { text, summary } = redactResumePrivacy(
+    extractedResumeText,
+    buildPrivacyRedactions(user, parsePrivacyRedactions(privacyRedactions))
+  );
+
+  if (text.length < minimumResumeTextLength) {
+    throw new Error("The uploaded resume only contained privacy details after redaction.");
+  }
+
+  return {
+    fileName: safeResumeFileName(file.originalname),
+    contentType: file.mimetype,
+    fileSize: file.size,
+    fileBytes: file.buffer,
+    text,
+    privacyRedaction: summary
+  };
+};
+
+const runResumeAnalysis = async ({
+  user,
+  jobPostingId,
+  applicationDate,
+  jobTitle,
+  jobDescription,
+  resume
+}: {
+  user: UserRecord;
+  jobPostingId?: number;
+  applicationDate: string;
+  jobTitle: string;
+  jobDescription?: string;
+  resume: AnalysisResumeSource;
+}): Promise<AnalyzeResponse> => {
+  const selectedPosting = jobPostingId ? await getActiveJobPosting(jobPostingId) : undefined;
+  if (jobPostingId && !selectedPosting) {
+    throw new Error("Choose an active job posting.");
+  }
+
+  const resolvedJobTitle = selectedPosting?.title ?? jobTitle;
+  const resolvedJobDescription = selectedPosting?.description ?? jobDescription;
+
+  const jobId = await createJob({
+    userId: user.id,
+    jobPostingId: selectedPosting?.id,
+    applicationDate,
+    jobTitle: resolvedJobTitle,
+    jobDescription: resolvedJobDescription,
+    resumeFileName: resume.fileName,
+    characterCount: resume.characterCount
+  });
+
+  let job = await getJob({ id: jobId, userId: user.id, role: user.role });
+  if (!job) {
+    throw new Error("Created analysis job could not be loaded.");
+  }
+
+  try {
+    const { analysis, chunkCount } = await analyzeResume(
+      jobId,
+      applicationDate,
+      resume.text,
+      resolvedJobTitle,
+      resolvedJobDescription
+    );
+
+    await completeJob({ id: jobId, analysis, chunkCount });
+    job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    if (!job) {
+      throw new Error("Completed analysis job could not be loaded.");
+    }
+    refreshUserMatchProfileAfterWrite(user.id);
+
+    return {
+      job,
+      analysis,
+      resumeStats: {
+        fileName: resume.fileName,
+        characterCount: resume.characterCount,
+        chunkCount
+      },
+      privacyRedaction: resume.privacyRedaction,
+      models: {
+        llm: config.llmModel,
+        embedding: config.embeddingModel
+      }
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    await failJob(jobId, message);
+    throw error;
+  }
 };
 
 const requireAuth: express.RequestHandler = async (request, response, next) => {
@@ -247,7 +456,42 @@ app.get("/api/instance-health", (_request, response) => {
 
 app.get("/api/jobs", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
-  response.json({ jobs: await listJobs({ userId: user.id, role: user.role }) });
+  response.json({ jobs: visibleJobs(await listJobs({ userId: user.id, role: user.role }), user.role) });
+});
+
+app.get("/api/applications", requireAuth, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  const query = applicationsQuerySchema.parse(request.query);
+  const search = query.search ?? "";
+  let semanticJobIds: number[] = [];
+
+  try {
+    semanticJobIds = (await matchApplicationsBySemanticQuery({
+      search,
+      userId: user.id,
+      role: user.role,
+      limit: query.limit ?? 100
+    })).map((match) => match.jobId);
+  } catch (error) {
+    console.warn(
+      `Semantic application search failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+  }
+
+  response.json({
+    jobs: visibleJobs(
+      await searchJobs({
+        userId: user.id,
+        role: user.role,
+        search,
+        semanticJobIds,
+        limit: query.limit ?? 100
+      }),
+      user.role
+    )
+  });
 });
 
 app.get("/api/job-postings", requireAuth, async (request, response) => {
@@ -352,7 +596,7 @@ app.get("/api/resumes", requireAuth, async (request, response) => {
   response.json({ resumes: await listResumeVersions(user.id) });
 });
 
-app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, response) => {
+app.post("/api/resumes/privacy-preview", requireAuth, upload.single("resume"), async (request, response) => {
   try {
     const { user } = request as AuthenticatedRequest;
     if (!request.file) {
@@ -361,33 +605,45 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
     }
 
     const extractedResumeText = await extractResumeText(request.file);
-    if (extractedResumeText.length < 80) {
-      response.status(400).json({ error: "The uploaded resume did not contain enough readable text." });
+    response.json({
+      privacyRedactions: detectResumePrivacy(extractedResumeText, {
+        name: user.name,
+        email: user.email
+      }),
+      characterCount: extractedResumeText.length
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Privacy preview failed.";
+    response.status(400).json({ error: message });
+  }
+});
+
+app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, response) => {
+  try {
+    const { user } = request as AuthenticatedRequest;
+    if (!request.file) {
+      response.status(400).json({ error: "Upload a resume file." });
       return;
     }
 
-    const { text: resumeText, summary: privacyRedaction } = redactResumePrivacy(
-      extractedResumeText,
-      buildPrivacyRedactions(user, parsePrivacyRedactions(request.body.privacyRedactions))
-    );
-
-    if (resumeText.length < 80) {
-      response.status(400).json({ error: "The uploaded resume only contained privacy details after redaction." });
-      return;
-    }
+    const resumeUpload = await readRedactedResumeUpload({
+      file: request.file,
+      user,
+      privacyRedactions: request.body.privacyRedactions
+    });
 
     const resume = await createResumeVersion({
       userId: user.id,
-      fileName: safeResumeFileName(request.file.originalname),
-      contentType: request.file.mimetype,
-      fileSize: request.file.size,
-      fileBytes: request.file.buffer,
-      characterCount: resumeText.length,
-      resumeText
+      fileName: resumeUpload.fileName,
+      contentType: resumeUpload.contentType,
+      fileSize: resumeUpload.fileSize,
+      fileBytes: resumeUpload.fileBytes,
+      characterCount: resumeUpload.text.length,
+      resumeText: resumeUpload.text
     });
 
     refreshUserMatchProfileAfterWrite(user.id);
-    response.status(201).json({ resume, privacyRedaction });
+    response.status(201).json({ resume, privacyRedaction: resumeUpload.privacyRedaction });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Resume upload failed.";
     response.status(400).json({ error: message });
@@ -396,8 +652,7 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
 
 app.get("/api/resumes/:resumeId/download", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
-  const rawResumeId = request.params.resumeId;
-  const resumeId = typeof rawResumeId === "string" ? Number.parseInt(rawResumeId, 10) : Number.NaN;
+  const resumeId = parsePositiveIntegerParam(request.params.resumeId);
   if (!Number.isSafeInteger(resumeId) || resumeId <= 0) {
     response.status(400).json({ error: "Choose a valid resume version." });
     return;
@@ -420,6 +675,40 @@ app.get("/api/resumes/:resumeId/download", requireAuth, async (request, response
     `attachment; filename="${downloadResumeFileName(resume.fileName, resume.versionNumber)}"`
   );
   response.send(resume.fileBytes);
+});
+
+app.get("/api/admin/jobs/:jobId/assessment.pdf", requireAuth, requireAdmin, async (request, response) => {
+  try {
+    const { user } = request as AuthenticatedRequest;
+    const jobId = parsePositiveIntegerParam(request.params.jobId);
+    if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+      response.status(400).json({ error: "Choose a valid application." });
+      return;
+    }
+
+    const job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    if (!job) {
+      response.status(404).json({ error: "Application not found." });
+      return;
+    }
+
+    if (!job.analysis) {
+      response.status(400).json({ error: "No completed LLM assessment is available for this application." });
+      return;
+    }
+
+    const pdf = buildAssessmentPdf(job);
+    response.setHeader("Content-Type", "application/pdf");
+    response.setHeader("Content-Length", String(pdf.length));
+    response.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${assessmentPdfFileName(job)}"`
+    );
+    response.send(pdf);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Assessment download failed.";
+    response.status(400).json({ error: message });
+  }
 });
 
 app.post("/api/logout", requireAuth, async (request, response) => {
@@ -488,6 +777,52 @@ app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, r
   }
 });
 
+app.get("/api/admin/job-postings/:jobPostingId/applications", requireAuth, requireAdmin, async (request, response) => {
+  const jobPostingId = parsePositiveIntegerParam(request.params.jobPostingId);
+  if (!Number.isSafeInteger(jobPostingId) || jobPostingId <= 0) {
+    response.status(400).json({ error: "Choose a valid job posting." });
+    return;
+  }
+
+  response.json({
+    jobs: await listJobsForPosting({ jobPostingId, limit: 200 })
+  });
+});
+
+app.patch("/api/admin/jobs/:jobId/interview-questions", requireAuth, requireAdmin, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  const jobId = parsePositiveIntegerParam(request.params.jobId);
+  if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+    response.status(400).json({ error: "Choose a valid application." });
+    return;
+  }
+
+  try {
+    const body = updateInterviewQuestionsBodySchema.parse(request.body);
+    const job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    if (!job) {
+      response.status(404).json({ error: "Application not found." });
+      return;
+    }
+
+    if (!job.analysis) {
+      response.status(400).json({ error: "No completed LLM assessment is available for this application." });
+      return;
+    }
+
+    await updateJobInterviewQuestions({
+      id: jobId,
+      interviewQuestions: body.interviewQuestions
+    });
+
+    const updatedJob = await getJob({ id: jobId, userId: user.id, role: user.role });
+    response.json({ job: updatedJob });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Interview question update failed.";
+    response.status(400).json({ error: message });
+  }
+});
+
 app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   try {
@@ -497,77 +832,64 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
     }
 
     const body = analyzeBodySchema.parse(request.body);
-    const selectedPosting = body.jobPostingId
-      ? await getActiveJobPosting(body.jobPostingId)
-      : undefined;
-    if (body.jobPostingId && !selectedPosting) {
-      response.status(400).json({ error: "Choose an active job posting." });
-      return;
-    }
-
-    const jobTitle = selectedPosting?.title ?? body.jobTitle;
-    const jobDescription = selectedPosting?.description ?? body.jobDescription;
-    const extractedResumeText = await extractResumeText(request.file);
-
-    if (extractedResumeText.length < 80) {
-      response.status(400).json({ error: "The uploaded resume did not contain enough readable text." });
-      return;
-    }
-
-    const { text: resumeText, summary: privacyRedaction } = redactResumePrivacy(
-      extractedResumeText,
-      buildPrivacyRedactions(user, parsePrivacyRedactions(body.privacyRedactions))
-    );
-
-    if (resumeText.length < 80) {
-      response.status(400).json({ error: "The uploaded resume only contained privacy details after redaction." });
-      return;
-    }
-
-    const jobId = await createJob({
-      userId: user.id,
-      jobPostingId: selectedPosting?.id,
-      applicationDate: body.applicationDate,
-      jobTitle,
-      jobDescription,
-      resumeFileName: safeResumeFileName(request.file.originalname),
-      characterCount: resumeText.length
+    const resumeUpload = await readRedactedResumeUpload({
+      file: request.file,
+      user,
+      privacyRedactions: body.privacyRedactions
     });
 
-    let job = await getJob({ id: jobId, userId: user.id, role: user.role });
-
-    try {
-      const { analysis, chunkCount } = await analyzeResume(
-        jobId,
-        body.applicationDate,
-        resumeText,
-        jobTitle,
-        jobDescription
-      );
-
-      await completeJob({ id: jobId, analysis, chunkCount });
-      job = await getJob({ id: jobId, userId: user.id, role: user.role });
-      refreshUserMatchProfileAfterWrite(user.id);
-
-      response.json({
-        job,
-        analysis,
-        resumeStats: {
-          fileName: safeResumeFileName(request.file.originalname),
-          characterCount: resumeText.length,
-          chunkCount
-        },
-        privacyRedaction,
-        models: {
-          llm: config.llmModel,
-          embedding: config.embeddingModel
+    response.json(
+      visibleAnalyzeResponse(await runResumeAnalysis({
+        user,
+        jobPostingId: body.jobPostingId,
+        applicationDate: body.applicationDate,
+        jobTitle: body.jobTitle,
+        jobDescription: body.jobDescription,
+        resume: {
+          fileName: resumeUpload.fileName,
+          characterCount: resumeUpload.text.length,
+          text: resumeUpload.text,
+          privacyRedaction: resumeUpload.privacyRedaction
         }
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected server error.";
-      await failJob(jobId, message);
-      throw error;
+      }), user.role)
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;
+    response.status(status).json({ error: message });
+  }
+});
+
+app.post("/api/analyze/latest", requireAuth, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  try {
+    const body = analyzeStoredResumeBodySchema.parse(request.body);
+    const latestResume = await getLatestResumeVersion(user.id);
+    if (!latestResume) {
+      response.status(400).json({ error: "Upload a resume to your profile before matching a role." });
+      return;
     }
+
+    if (latestResume.resumeText.length < minimumResumeTextLength) {
+      response.status(400).json({ error: "The latest stored resume does not contain enough readable text." });
+      return;
+    }
+
+    response.json(
+      visibleAnalyzeResponse(await runResumeAnalysis({
+        user,
+        jobPostingId: body.jobPostingId,
+        applicationDate: body.applicationDate,
+        jobTitle: body.jobTitle,
+        jobDescription: body.jobDescription,
+        resume: {
+          fileName: latestResume.fileName,
+          characterCount: latestResume.characterCount,
+          text: latestResume.resumeText,
+          privacyRedaction: noPrivacyRedaction()
+        }
+      }), user.role)
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;

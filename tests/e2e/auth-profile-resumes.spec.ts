@@ -19,23 +19,23 @@ const seedResumeVersionSql = readFileSync(
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.round(Math.random() * 100_000)}@example.com`;
 
 const seededAnalysis: ResumeAnalysis = {
-  candidateSummary: "Candidate matches the backend role through TypeScript service delivery and database ownership.",
+  candidateSummary: "Candidate matches the veterinary reception role through client intake, appointment scheduling, and clinic coordination evidence.",
   fitScore: 82,
   fitLevel: "high",
-  strengths: ["Built secure TypeScript APIs", "Owned PostgreSQL-backed services"],
-  gaps: ["Missing Kubernetes deployment depth"],
-  risks: ["Limited enterprise Java evidence"],
-  recommendations: ["Add PostgreSQL metrics", "Emphasize production API ownership"],
-  suggestedKeywords: ["TypeScript", "PostgreSQL", "REST APIs"],
-  interviewQuestions: ["Which API decisions improved reliability?"],
+  strengths: ["Managed client intake", "Coordinated appointment books"],
+  gaps: ["Confirm emergency triage confidence"],
+  risks: ["Billing accuracy should be verified"],
+  recommendations: ["Lead with reception workflow ownership", "Emphasize calm client communication"],
+  suggestedKeywords: ["client intake", "appointment scheduling", "EFTPOS"],
+  interviewQuestions: ["How do you handle a distressed pet owner at reception?"],
   requirementAssessments: [
     {
       category: "role_competency",
-      requirement: "Build secure TypeScript services",
+      requirement: "Manage client intake and appointment scheduling",
       importance: "must_have",
       status: "met",
-      evidence: ["Built secure TypeScript APIs"],
-      rationale: "The resume directly supports secure TypeScript service delivery."
+      evidence: ["Managed client intake and appointment scheduling"],
+      rationale: "The resume directly supports veterinary reception workflow ownership."
     }
   ],
   scoreBreakdown: {
@@ -50,7 +50,7 @@ const seededAnalysis: ResumeAnalysis = {
     ignoredFactors: ["name", "address"],
     notes: ["The assessment ignored identity and location clues."]
   },
-  evidence: [{ id: 1, text: "REST API delivery evidence with PostgreSQL ownership.", score: 0.84 }]
+  evidence: [{ id: 1, text: "Veterinary reception evidence with client intake and scheduling ownership.", score: 0.84 }]
 };
 
 const seedCompletedApplication = async ({
@@ -68,9 +68,9 @@ const seedCompletedApplication = async ({
       [
         userId,
         jobTitle,
-        "Build secure TypeScript services and PostgreSQL-backed APIs.",
+        "Manage client intake, appointment scheduling, EFTPOS payments, and phone triage.",
         "seeded-resume.md",
-        "Add PostgreSQL metrics\nEmphasize production API ownership",
+        "Lead with reception workflow ownership\nEmphasize calm client communication",
         JSON.stringify(seededAnalysis)
       ]
     );
@@ -109,10 +109,11 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await page.getByPlaceholder("Jane Doe").fill("E2E Candidate");
     await page.getByPlaceholder("jane@example.com").fill(email);
     await page.getByPlaceholder("12+ chars, mixed case, number").fill("SecurePass123");
+    await page.getByPlaceholder("Retype account password").fill("SecurePass123");
     await page.getByRole("button", { name: "Create account" }).click();
 
-    await expect(page.getByText("New analysis")).toBeVisible();
-    await expect(page.getByText(email)).toBeVisible();
+    await expect(page).toHaveURL(/\/applications$/);
+    await expect(page.getByRole("heading", { name: "My Applications" })).toBeVisible();
 
     await page.getByRole("button", { name: "Profile" }).first().click();
     await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible();
@@ -122,7 +123,7 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await page.getByRole("button", { name: "Save profile" }).click();
 
     await expect(page.getByText("Profile updated.")).toBeVisible();
-    await expect(page.getByText(updatedEmail)).toBeVisible();
+    await expect(page.locator(".profile-form").first().getByRole("textbox").nth(1)).toHaveValue(updatedEmail);
 
     const uploadInput = page.locator('input[type="file"]').last();
     await uploadInput.setInputFiles(resumeFixture);
@@ -141,6 +142,29 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     expect((await userDownload).suggestedFilename()).toBe("resume-v2.md");
   });
 
+  test("guides users without a resume to upload before applying", async ({ page }) => {
+    const email = uniqueEmail("e2e-no-resume");
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Register" }).click();
+    await page.getByPlaceholder("Jane Doe").fill("No Resume Candidate");
+    await page.getByPlaceholder("jane@example.com").fill(email);
+    await page.getByPlaceholder("12+ chars, mixed case, number").fill("SecurePass123");
+    await page.getByPlaceholder("Retype account password").fill("SecurePass123");
+    await page.getByRole("button", { name: "Create account" }).click();
+
+    await expect(page).toHaveURL(/\/applications$/);
+    await page.getByRole("button", { name: "Jobs", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Find roles" })).toBeVisible();
+    await expect(page.locator(".posting-card").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Upload resume to apply" }).first().click();
+
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.getByRole("heading", { name: "Resume Versions" })).toBeVisible();
+    await expect(page.getByText(/Upload a resume before applying to/)).toBeVisible();
+  });
+
   test("allows admin overview and denies the same endpoint to regular users", async ({ page, request }) => {
     const regularEmail = uniqueEmail("e2e-regular");
 
@@ -148,7 +172,8 @@ test.describe.serial("resume analyzer account and profile flows", () => {
       data: {
         name: "Regular E2E User",
         email: regularEmail,
-        password: "SecurePass123"
+        password: "SecurePass123",
+        passwordConfirmation: "SecurePass123"
       }
     });
     expect(regularRegistration.status()).toBe(201);
@@ -173,7 +198,7 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     });
     expect(usersDenied.status()).toBe(403);
 
-    const seededJobTitle = `Seeded TypeScript Role ${Date.now()}`;
+    const seededJobTitle = `Seeded Veterinary Reception Role ${Date.now()}`;
     if (process.env.DATABASE_URL) {
       await seedResumeVersion({ userId: regularSession.user.id, fileName: "admin-users-resume.md" });
       await seedCompletedApplication({ userId: regularSession.user.id, jobTitle: seededJobTitle });
@@ -184,11 +209,8 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await page.getByPlaceholder("Account password").fill(adminPassword);
     await page.getByRole("button", { name: "Sign in" }).click();
 
-    await expect(page.getByRole("heading", { name: "Admin Overview" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-    await expect(page.getByText(regularEmail, { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Job Postings" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Candidate Matches" })).toBeVisible();
+    await expect(page).toHaveURL(/\/applications$/);
+    await expect(page.getByRole("heading", { name: "Applications" })).toBeVisible();
 
     await page.getByRole("button", { name: "Health" }).click();
     await expect(page.getByRole("heading", { name: "System Health" })).toBeVisible();
@@ -200,7 +222,7 @@ test.describe.serial("resume analyzer account and profile flows", () => {
 
     await page.getByRole("button", { name: "Users" }).click();
     await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-    await page.getByPlaceholder("TypeScript, Java, PostgreSQL, product manager...").fill("TypeScript");
+    await page.getByPlaceholder("client intake, phone triage, anaesthetic monitoring...").fill("client intake");
     await expect(page.locator(".admin-user-card").filter({ hasText: regularEmail })).toBeVisible();
     if (process.env.DATABASE_URL) {
       const userCard = page.locator(".admin-user-card").filter({ hasText: regularEmail });
@@ -209,46 +231,44 @@ test.describe.serial("resume analyzer account and profile flows", () => {
       await userCard.getByRole("button", { name: "Download resume" }).click();
       expect((await adminDownload).suggestedFilename()).toBe("resume-v1.md");
       await expect(userCard.getByText(seededJobTitle)).toBeVisible();
-      await expect(userCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+      await expect(userCard.locator(".tag-chip").filter({ hasText: "client intake" })).toBeVisible();
       const adminApplication = userCard.locator(".application-card").filter({ hasText: seededJobTitle });
       await adminApplication.getByRole("button", { name: new RegExp(seededJobTitle) }).click();
       await expect(adminApplication.getByText("Candidate summary")).toBeVisible();
       await expect(adminApplication.getByText("HR Score Breakdown")).toBeVisible();
       await expect(adminApplication.getByText("Requirement Assessment")).toBeVisible();
-      await expect(adminApplication.getByText("Build secure TypeScript services", { exact: true })).toBeVisible();
+      await expect(adminApplication.getByText("Manage client intake and appointment scheduling", { exact: true })).toBeVisible();
       await expect(adminApplication.getByText("Fairness Review")).toBeVisible();
       await expect(adminApplication.getByText("Ranked evidence")).toBeVisible();
-      await expect(adminApplication.getByText("REST API delivery evidence with PostgreSQL ownership.")).toBeVisible();
+      await expect(adminApplication.getByText("Veterinary reception evidence with client intake and scheduling ownership.")).toBeVisible();
     }
 
-    const postingTitle = `E2E Platform Engineer ${Date.now()}`;
+    const postingTitle = `E2E Veterinary Receptionist ${Date.now()}`;
     await page.getByRole("button", { name: "Add jobs" }).click();
     await expect(page.getByRole("heading", { name: "Add job posting" })).toBeVisible();
-    await page.getByPlaceholder("Backend Platform Engineer").fill(postingTitle);
-    await page.getByPlaceholder("Type a skill and press Enter").fill("TypeScript");
+    await page.getByPlaceholder("Veterinary Receptionist").fill(postingTitle);
+    await page.getByPlaceholder("Type a skill and press Enter").fill("client intake");
     await page.getByRole("button", { name: "Add skill" }).click();
-    await page.getByPlaceholder("Type a skill and press Enter").fill("PostgreSQL");
+    await page.getByPlaceholder("Type a skill and press Enter").fill("phone triage");
     await page.keyboard.press("Enter");
     await page
       .getByPlaceholder("Paste the job posting requirements, responsibilities, and qualifications.")
-      .fill("Build secure TypeScript services, PostgreSQL systems, and production APIs.");
+      .fill("Manage appointment scheduling, client intake, EFTPOS payments, phone triage, and urgent visit coordination.");
     await page.getByRole("button", { name: "Publish job posting" }).click();
 
     await expect(page.getByText("Job posting saved and selected for analysis.")).toBeVisible();
     const postingCard = page.locator(".posting-card").filter({ hasText: postingTitle });
     await expect(postingCard).toBeVisible();
-    await expect(postingCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+    await expect(postingCard.locator(".tag-chip").filter({ hasText: "client intake" })).toBeVisible();
 
     await page.getByRole("button", { name: "Jobs", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Find roles" })).toBeVisible();
     await page
-      .getByPlaceholder("financial controls, customer success, cloud operations...")
-      .fill("PostgreSQL");
+      .getByPlaceholder("appointment scheduling, client intake, anaesthetic monitoring...")
+      .fill("client intake");
     const searchResult = page.locator(".posting-card").filter({ hasText: postingTitle });
     await expect(searchResult).toBeVisible();
-    await searchResult.getByRole("button", { name: "Match my resume" }).click();
-    await expect(page.getByRole("button", { name: "Analyze resume" })).toBeVisible();
-    await expect(page.getByLabel("Job title")).toHaveValue(postingTitle);
+    await expect(searchResult.getByRole("button", { name: "Analyze candidate" })).toBeVisible();
   });
 
   test("expands profile applications with stored analysis details", async ({ page, request }) => {
@@ -256,13 +276,14 @@ test.describe.serial("resume analyzer account and profile flows", () => {
 
     const email = uniqueEmail("e2e-application-details");
     const password = "SecurePass123";
-    const jobTitle = `Seeded Backend Role ${Date.now()}`;
+    const jobTitle = `Seeded Veterinary Reception Role ${Date.now()}`;
 
     const registration = await request.post("/api/register", {
       data: {
         name: "Application Details User",
         email,
-        password
+        password,
+        passwordConfirmation: password
       }
     });
     expect(registration.status()).toBe(201);
@@ -282,13 +303,13 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await expect(application.getByText("Candidate summary")).toBeVisible();
     await expect(application.getByText("HR Score Breakdown")).toBeVisible();
     await expect(application.getByText("Requirement Assessment")).toBeVisible();
-    await expect(application.getByText("Build secure TypeScript services", { exact: true })).toBeVisible();
+    await expect(application.getByText("Manage client intake and appointment scheduling", { exact: true })).toBeVisible();
     await expect(application.getByText("Fairness Review")).toBeVisible();
     await expect(application.getByText("The assessment ignored identity and location clues.")).toBeVisible();
-    await expect(application.getByText("Built secure TypeScript APIs").first()).toBeVisible();
-    await expect(application.getByText("Missing Kubernetes deployment depth")).toBeVisible();
-    await expect(application.getByText("Add PostgreSQL metrics", { exact: true })).toBeVisible();
+    await expect(application.getByText("Managed client intake").first()).toBeVisible();
+    await expect(application.getByText("Confirm emergency triage confidence")).toBeVisible();
+    await expect(application.getByText("Lead with reception workflow ownership", { exact: true })).toBeVisible();
     await expect(application.getByText("Ranked evidence")).toBeVisible();
-    await expect(application.getByText("REST API delivery evidence with PostgreSQL ownership.")).toBeVisible();
+    await expect(application.getByText("Veterinary reception evidence with client intake and scheduling ownership.")).toBeVisible();
   });
 });

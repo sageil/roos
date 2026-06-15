@@ -12,8 +12,8 @@ INSERT INTO resume_versions (
   COALESCE((SELECT MAX(version_number) + 1 FROM resume_versions WHERE user_id = $1), 1),
   $2,
   'text/markdown',
-  octet_length(convert_to('Seeded resume text with TypeScript and PostgreSQL experience.', 'UTF8')),
-  convert_to('Seeded resume text with TypeScript and PostgreSQL experience.', 'UTF8'),
+  octet_length(convert_to('Seeded resume text with client intake, appointment scheduling, and EFTPOS experience.', 'UTF8')),
+  convert_to('Seeded resume text with client intake, appointment scheduling, and EFTPOS experience.', 'UTF8'),
   2400,
-  'Seeded resume text with TypeScript and PostgreSQL experience.'
+  'Seeded resume text with client intake, appointment scheduling, and EFTPOS experience.'
 );

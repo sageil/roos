@@ -33,9 +33,13 @@ vi.mock("../../src/server/sql.js", () => ({
       fail: "jobs.fail",
       get: "jobs.get",
       listAll: "jobs.listAll",
-      listForUser: "jobs.listForUser"
+      listForPosting: "jobs.listForPosting",
+      listForUser: "jobs.listForUser",
+      search: "jobs.search",
+      updateInterviewQuestions: "jobs.updateInterviewQuestions"
     },
     resumeChunks: {
+      matchJobs: "resumeChunks.matchJobs",
       match: "resumeChunks.match",
       upsert: "resumeChunks.upsert"
     },
@@ -53,9 +57,13 @@ import {
   failJob,
   getCachedAnalysis,
   getJob,
+  listJobsForPosting,
   listJobs,
+  queryMatchingJobIds,
   queryJobEvidence,
+  searchJobs,
   storeResumeChunks,
+  updateJobInterviewQuestions,
   upsertCachedAnalysis
 } from "../../src/server/postgresStore.js";
 
@@ -63,13 +71,13 @@ const jobRow = {
   id: 12,
   user_id: 7,
   job_posting_id: 4,
-  job_posting_title: "Platform Staff Engineer",
-  user_name: "Ada Lovelace",
-  user_email: "ada@example.com",
+  job_posting_title: "Veterinary Receptionist",
+  user_name: "Priya Patel",
+  user_email: "priya@example.com.au",
   status: "completed" as const,
   application_date: "2026-06-14",
-  job_title: "Staff Engineer",
-  job_description: "Build systems",
+  job_title: "Veterinary Receptionist",
+  job_description: "Manage client intake and appointment scheduling",
   resume_file_name: "resume.pdf",
   character_count: 4200,
   chunk_count: 4,
@@ -88,20 +96,20 @@ const analysis: ResumeAnalysis = {
   candidateSummary: "Candidate summary",
   fitScore: 87,
   fitLevel: "high",
-  strengths: ["TypeScript"],
-  gaps: ["Kubernetes"],
-  risks: ["Limited domain history"],
-  recommendations: ["Lead with systems work", "Add measurable outcomes"],
-  suggestedKeywords: ["platform"],
-  interviewQuestions: ["How did you scale it?"],
+  strengths: ["Client intake"],
+  gaps: ["Emergency triage"],
+  risks: ["Billing accuracy should be verified"],
+  recommendations: ["Lead with reception workflow ownership", "Add measurable client communication outcomes"],
+  suggestedKeywords: ["client intake"],
+  interviewQuestions: ["How do you handle a distressed pet owner?"],
   requirementAssessments: [
     {
       category: "role_competency",
-      requirement: "Build TypeScript services",
+      requirement: "Manage client intake and appointment scheduling",
       importance: "must_have",
       status: "met",
-      evidence: ["TypeScript"],
-      rationale: "The resume includes direct TypeScript evidence."
+      evidence: ["Client intake"],
+      rationale: "The resume includes direct veterinary reception evidence."
     }
   ],
   scoreBreakdown: {
@@ -116,7 +124,7 @@ const analysis: ResumeAnalysis = {
     ignoredFactors: ["name"],
     notes: ["Only job-related evidence was considered."]
   },
-  evidence: [{ id: 1, text: "Built systems", score: 0.92 }]
+  evidence: [{ id: 1, text: "Managed appointment books and client intake", score: 0.92 }]
 };
 
 describe("postgresStore", () => {
@@ -133,7 +141,7 @@ describe("postgresStore", () => {
       createJob({
         userId: 7,
         applicationDate: "2026-06-14",
-        jobTitle: "Staff Engineer",
+        jobTitle: "Veterinary Receptionist",
         jobDescription: "",
         resumeFileName: "resume.pdf",
         characterCount: 4200
@@ -143,7 +151,7 @@ describe("postgresStore", () => {
       7,
       null,
       "2026-06-14",
-      "Staff Engineer",
+      "Veterinary Receptionist",
       null,
       "resume.pdf",
       4200
@@ -157,7 +165,7 @@ describe("postgresStore", () => {
 
     expect(queryPostgres).toHaveBeenCalledWith("jobs.complete", [
       4,
-      "Lead with systems work\nAdd measurable outcomes",
+      "Lead with reception workflow ownership\nAdd measurable client communication outcomes",
       87,
       "high",
       JSON.stringify(analysis),
@@ -201,13 +209,13 @@ describe("postgresStore", () => {
         id: 12,
         userId: 7,
         jobPostingId: 4,
-        jobPostingTitle: "Platform Staff Engineer",
-        userName: "Ada Lovelace",
-        userEmail: "ada@example.com",
+        jobPostingTitle: "Veterinary Receptionist",
+        userName: "Priya Patel",
+        userEmail: "priya@example.com.au",
         status: "completed",
         applicationDate: "2026-06-14",
-        jobTitle: "Staff Engineer",
-        jobDescription: "Build systems",
+        jobTitle: "Veterinary Receptionist",
+        jobDescription: "Manage client intake and appointment scheduling",
         resumeFileName: "resume.pdf",
         characterCount: 4200,
         chunkCount: 4,
@@ -228,6 +236,19 @@ describe("postgresStore", () => {
   it("maps stored analysis JSON onto listed jobs", async () => {
     queryPostgres.mockResolvedValueOnce({
       rows: [{ ...jobRow, analysis_json: JSON.stringify(analysis) }]
+    });
+
+    await expect(listJobs({ userId: 7, role: "user", limit: 10 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 12,
+        analysis
+      })
+    ]);
+  });
+
+  it("maps pg jsonb analysis objects onto listed jobs", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{ ...jobRow, analysis_json: analysis }]
     });
 
     await expect(listJobs({ userId: 7, role: "user", limit: 10 })).resolves.toEqual([
@@ -263,6 +284,28 @@ describe("postgresStore", () => {
     expect(queryPostgres).toHaveBeenCalledWith("analysisCache.get", ["cache-key"]);
   });
 
+  it("gets cached pg jsonb analysis objects by key", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{
+        cache_key: "cache-key",
+        resume_hash: "resume-hash",
+        job_profile_hash: "profile-hash",
+        llm_model: "local-llm",
+        embedding_model: "embedding-model",
+        analysis_json: analysis,
+        chunk_count: 4,
+        created_at: "2026-06-14T12:00:00.000Z",
+        updated_at: "2026-06-14T12:05:00.000Z"
+      }]
+    });
+
+    await expect(getCachedAnalysis("cache-key")).resolves.toMatchObject({
+      cacheKey: "cache-key",
+      analysis,
+      chunkCount: 4
+    });
+  });
+
   it("upserts cached analysis with model metadata", async () => {
     queryPostgres.mockResolvedValueOnce({ rows: [] });
 
@@ -293,6 +336,46 @@ describe("postgresStore", () => {
     expect(queryPostgres).toHaveBeenCalledWith("jobs.listForUser", [7, 10]);
   });
 
+  it("lists jobs for a specific posting", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [{ ...jobRow, analysis_json: JSON.stringify(analysis) }] });
+
+    await expect(listJobsForPosting({ jobPostingId: 4, limit: 25 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 12,
+        jobPostingId: 4,
+        userName: "Priya Patel",
+        analysis
+      })
+    ]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.listForPosting", [4, 25]);
+  });
+
+  it("searches jobs with exact and semantic inputs", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [{ ...jobRow, analysis_json: JSON.stringify(analysis) }] });
+
+    await expect(
+      searchJobs({
+        userId: 7,
+        role: "admin",
+        search: " client intake ",
+        semanticJobIds: [12, 9],
+        limit: 25
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 12,
+        analysis
+      })
+    ]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.search", [
+      "admin",
+      7,
+      "client intake",
+      [12, 9],
+      25
+    ]);
+  });
+
   it("gets jobs with admin bypass or user scoping", async () => {
     queryPostgres.mockResolvedValueOnce({ rows: [jobRow] });
     queryPostgres.mockResolvedValueOnce({ rows: [] });
@@ -316,7 +399,7 @@ describe("postgresStore", () => {
     await storeResumeChunks({
       jobId: 12,
       applicationDate: "2026-06-14",
-      jobTitle: "Staff Engineer",
+      jobTitle: "Veterinary Receptionist",
       chunks: [
         { id: 1, text: "first chunk" },
         { id: 2, text: "second chunk" }
@@ -334,7 +417,7 @@ describe("postgresStore", () => {
       "first chunk",
       "[0.1,0.2]",
       "2026-06-14",
-      "Staff Engineer",
+      "Veterinary Receptionist",
       "text-embedding-nomic-embed-text-v1.5-embedding"
     ]);
     expect(client.query).toHaveBeenNthCalledWith(4, "transactions.commit");
@@ -357,7 +440,7 @@ describe("postgresStore", () => {
       storeResumeChunks({
         jobId: 12,
         applicationDate: "2026-06-14",
-        jobTitle: "Staff Engineer",
+        jobTitle: "Veterinary Receptionist",
         chunks: [{ id: 1, text: "first chunk" }],
         embeddings: [[0.1, 0.2]]
       })
@@ -369,7 +452,11 @@ describe("postgresStore", () => {
 
   it("queries job evidence with a pgvector literal and rounded scores", async () => {
     queryPostgres.mockResolvedValueOnce({
-      rows: [{ chunk_id: 1, document: "Relevant resume text", score: 0.87654 }]
+      rows: [
+        { chunk_id: 1, document: "Relevant resume text", score: 0.87654 },
+        { chunk_id: 2, document: "Numeric string score", score: "0.76543" },
+        { chunk_id: 3, document: "Non-finite score", score: Number.NaN }
+      ]
     });
 
     await expect(
@@ -379,12 +466,64 @@ describe("postgresStore", () => {
         id: 1,
         text: "Relevant resume text",
         score: 0.8765
+      },
+      {
+        id: 2,
+        text: "Numeric string score",
+        score: 0.7654
+      },
+      {
+        id: 3,
+        text: "Non-finite score",
+        score: 0
       }
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("resumeChunks.match", [
       12,
       "[0.1,0.2]",
       5
+    ]);
+  });
+
+  it("queries matching jobs by semantic resume chunks", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [
+        { job_id: 12, score: 0.91 },
+        { job_id: 9, score: 0.84 }
+      ]
+    });
+
+    await expect(
+      queryMatchingJobIds({
+        queryEmbedding: [0.1, 0.2],
+        userId: 7,
+        role: "user",
+        nResults: 10
+      })
+    ).resolves.toEqual([
+      { jobId: 12, score: 0.91 },
+      { jobId: 9, score: 0.84 }
+    ]);
+    expect(queryPostgres).toHaveBeenCalledWith("resumeChunks.matchJobs", [
+      "[0.1,0.2]",
+      "text-embedding-nomic-embed-text-v1.5-embedding",
+      "user",
+      7,
+      10
+    ]);
+  });
+
+  it("updates stored interview questions for an analyzed job", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await updateJobInterviewQuestions({
+      id: 12,
+      interviewQuestions: ["Confirm phone triage ownership.", "Describe urgent visit coordination scope."]
+    });
+
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.updateInterviewQuestions", [
+      12,
+      JSON.stringify(["Confirm phone triage ownership.", "Describe urgent visit coordination scope."])
     ]);
   });
 });

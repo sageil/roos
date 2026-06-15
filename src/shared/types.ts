@@ -74,6 +74,18 @@ export type PrivacyRedactionSummary = {
   total: number;
 };
 
+export type PrivacyPreviewResponse = {
+  privacyRedactions: {
+    name?: string;
+    names: string[];
+    emails: string[];
+    phones: string[];
+    addressLines: string[];
+    links: string[];
+  };
+  characterCount: number;
+};
+
 export type JobRecord = {
   id: number;
   userId?: number;
@@ -167,6 +179,10 @@ export type JobPostingRecord = {
 
 export type JobPostingsResponse = {
   jobPostings: JobPostingRecord[];
+};
+
+export type JobPostingApplicationsResponse = {
+  jobs: JobRecord[];
 };
 
 export type CreateJobPostingResponse = {

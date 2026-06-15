@@ -3,12 +3,12 @@ import { chunkResumeText } from "../../src/server/chunking.js";
 
 describe("chunkResumeText", () => {
   it("returns numbered chunks from separated resume sections", () => {
-    const chunks = chunkResumeText("SUMMARY\n\nExperienced engineer.\n\nSKILLS\n\nTypeScript and PostgreSQL.");
+    const chunks = chunkResumeText("SUMMARY\n\nExperienced veterinary receptionist.\n\nSKILLS\n\nClient intake and phone triage.");
 
     expect(chunks).toEqual([
       {
         id: 1,
-        text: "SUMMARY\n\nExperienced engineer.\n\nSKILLS\n\nTypeScript and PostgreSQL."
+        text: "SUMMARY\n\nExperienced veterinary receptionist.\n\nSKILLS\n\nClient intake and phone triage."
       }
     ]);
   });

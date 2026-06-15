@@ -51,28 +51,28 @@ import { analyzeResume } from "../../src/server/analysis.js";
 
 const resumeText = [
   "SUMMARY",
-  "Built secure TypeScript APIs with PostgreSQL ownership and production support.",
-  "Delivered REST services, observability, and reliability improvements."
+  "Managed veterinary reception workflows with client intake, appointment scheduling, and EFTPOS payments.",
+  "Coordinated urgent visit arrivals, vaccination reminders, insurance paperwork, and clinical team handoffs."
 ].join("\n");
 
 const cachedAnalysis: ResumeAnalysis = {
   candidateSummary: "Cached summary",
   fitScore: 75,
   fitLevel: "high",
-  strengths: ["TypeScript APIs"],
-  gaps: ["Kubernetes"],
+  strengths: ["Client intake"],
+  gaps: ["Emergency triage"],
   risks: [],
-  recommendations: ["Add deployment details"],
-  suggestedKeywords: ["PostgreSQL"],
-  interviewQuestions: ["How did you improve reliability?"],
+  recommendations: ["Add billing accuracy examples"],
+  suggestedKeywords: ["EFTPOS"],
+  interviewQuestions: ["How do you calm a distressed pet owner?"],
   requirementAssessments: [
     {
       category: "role_competency",
-      requirement: "Build TypeScript services",
+      requirement: "Manage client intake and appointment scheduling",
       importance: "must_have",
       status: "met",
-      evidence: ["Built secure TypeScript APIs"],
-      rationale: "The resume directly describes TypeScript API delivery."
+      evidence: ["Managed veterinary reception workflows"],
+      rationale: "The resume directly describes veterinary reception workflow ownership."
     }
   ],
   scoreBreakdown: {
@@ -92,20 +92,20 @@ const cachedAnalysis: ResumeAnalysis = {
 
 const llmAnalysis = {
   candidateSummary: "Fresh summary",
-  strengths: ["TypeScript APIs"],
-  gaps: ["Kubernetes"],
+  strengths: ["Client intake"],
+  gaps: ["Emergency triage"],
   risks: [],
-  recommendations: ["Add deployment details"],
-  suggestedKeywords: ["PostgreSQL"],
-  interviewQuestions: ["How did you improve reliability?"],
+  recommendations: ["Add billing accuracy examples"],
+  suggestedKeywords: ["EFTPOS"],
+  interviewQuestions: ["How do you calm a distressed pet owner?"],
   requirementAssessments: [
     {
       category: "role_competency",
-      requirement: "Build TypeScript services",
+      requirement: "Manage client intake and appointment scheduling",
       importance: "must_have",
       status: "met",
-      evidence: ["Built secure TypeScript APIs"],
-      rationale: "The resume directly describes TypeScript API delivery."
+      evidence: ["Managed veterinary reception workflows"],
+      rationale: "The resume directly describes veterinary reception workflow ownership."
     }
   ],
   scoreBreakdown: {
@@ -124,36 +124,36 @@ const llmAnalysis = {
 
 const partialMustHaveAnalysis = {
   candidateSummary: "The candidate has strong adjacent experience but only partial evidence for a core role requirement.",
-  strengths: ["Managed regional accounts", "Led client retention programs"],
-  gaps: ["No direct evidence of owning enterprise procurement negotiations"],
-  risks: ["Core buying-cycle ownership needs verification"],
-  recommendations: ["Add truthful examples of procurement negotiation ownership"],
-  suggestedKeywords: ["enterprise procurement", "contract negotiation"],
-  interviewQuestions: ["Which procurement negotiations did you own end to end?"],
+  strengths: ["Managed appointment books", "Handled client intake"],
+  gaps: ["No direct evidence of emergency triage ownership"],
+  risks: ["Urgent-care prioritisation needs verification"],
+  recommendations: ["Add truthful examples of urgent visit coordination"],
+  suggestedKeywords: ["phone triage", "urgent visit coordination"],
+  interviewQuestions: ["Which urgent visit coordination responsibilities did you own end to end?"],
   requirementAssessments: [
     {
       category: "minimum",
-      requirement: "5+ years managing strategic customer accounts",
+      requirement: "5+ years managing veterinary front desk workflows",
       importance: "must_have",
       status: "met",
-      evidence: ["Managed regional accounts"],
-      rationale: "The resume directly supports account management experience."
+      evidence: ["Managed appointment books"],
+      rationale: "The resume directly supports veterinary front desk experience."
     },
     {
       category: "role_competency",
-      requirement: "Own enterprise procurement negotiations end to end",
+      requirement: "Own emergency phone triage end to end",
       importance: "must_have",
       status: "partially_met",
-      evidence: ["Led client retention programs"],
-      rationale: "The resume shows related client ownership but not direct procurement negotiation ownership."
+      evidence: ["Handled client intake"],
+      rationale: "The resume shows related reception ownership but not direct emergency triage ownership."
     },
     {
       category: "domain",
-      requirement: "Experience in regulated financial services",
+      requirement: "Experience in veterinary clinic operations",
       importance: "must_have",
       status: "met",
-      evidence: ["Supported financial services clients"],
-      rationale: "The resume directly supports the domain requirement."
+      evidence: ["Supported veterinary clinic teams"],
+      rationale: "The resume directly supports the veterinary domain requirement."
     }
   ],
   scoreBreakdown: {
@@ -206,8 +206,8 @@ describe("analyzeResume", () => {
         12,
         "2026-06-14",
         resumeText,
-        "Backend Engineer",
-        "Build secure TypeScript services with PostgreSQL."
+        "Veterinary Receptionist",
+        "Manage client intake, appointment scheduling, EFTPOS payments, and urgent visit coordination."
       )
     ).resolves.toMatchObject({
       analysis: {
@@ -235,8 +235,8 @@ describe("analyzeResume", () => {
       12,
       "2026-06-14",
       resumeText,
-      "Backend Engineer",
-      "Build secure TypeScript services with PostgreSQL."
+      "Veterinary Receptionist",
+      "Manage client intake, appointment scheduling, EFTPOS payments, and urgent visit coordination."
     );
 
     expect(chatCreate).toHaveBeenCalledWith(
@@ -273,8 +273,8 @@ describe("analyzeResume", () => {
       12,
       "2026-06-14",
       resumeText,
-      "Strategic Account Manager",
-      "Own enterprise customer renewals, procurement negotiations, and regulated financial services accounts."
+      "Veterinary Receptionist",
+      "Own emergency phone triage, urgent visit coordination, and veterinary clinic records."
     );
 
     expect(result.analysis).toMatchObject({

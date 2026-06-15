@@ -138,6 +138,7 @@ For OpenAI:
 OPENAI_API_KEY=sk-...
 LLM_MODEL=gpt-5.5
 EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=768
 ```
 
 For LM Studio as the LLM provider outside Docker:
@@ -221,7 +222,7 @@ pnpm e2e:docker
 pnpm coverage:docker
 ```
 
-The Docker-backed E2E flow starts the proxied app stack and runs Playwright in a test container:
+The Docker-backed E2E flow starts the proxied app stack, refreshes the idempotent demo seed, and runs Playwright in a test container:
 
 ```bash
 pnpm e2e:docker

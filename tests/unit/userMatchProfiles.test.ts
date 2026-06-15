@@ -77,11 +77,11 @@ describe("userMatchProfiles", () => {
       ]
     });
 
-    await expect(matchAdminUsersBySemanticQuery(" postgres and kubernetes ", 25)).resolves.toEqual([
+    await expect(matchAdminUsersBySemanticQuery(" client intake and phone triage ", 25)).resolves.toEqual([
       { userId: 9, score: 0.91 },
       { userId: 7, score: 0.82 }
     ]);
-    expect(createEmbeddings).toHaveBeenCalledWith(["postgres and kubernetes"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(["client intake and phone triage"]);
     expect(queryPostgres).toHaveBeenCalledWith("userMatchProfiles.match", [
       "[0.4,0.5]",
       "text-embedding-nomic-embed-text-v1.5-embedding",

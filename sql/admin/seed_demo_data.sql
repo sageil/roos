@@ -8,6 +8,10 @@ settings AS (
 ),
 demo_users(email) AS (
   VALUES
+    ('olivia.harris@example.com.au'),
+    ('james.nguyen@example.com.au'),
+    ('priya.patel@example.com.au'),
+    ('michael.oconnor@example.com.au'),
     ('olivia.harris.au@example.com'),
     ('james.nguyen.au@example.com'),
     ('priya.patel.au@example.com'),
@@ -37,6 +41,17 @@ deleted_postings AS (
     AND (SELECT COUNT(*) FROM deleted_jobs) >= 0
   RETURNING 1
 ),
+deleted_legacy_users AS (
+  DELETE FROM users
+  WHERE email IN (
+    'olivia.harris.au@example.com',
+    'james.nguyen.au@example.com',
+    'priya.patel.au@example.com',
+    'michael.oconnor.au@example.com'
+  )
+    AND (SELECT COUNT(*) FROM deleted_postings) >= 0
+  RETURNING 1
+),
 admin_user AS (
   SELECT id
   FROM users
@@ -47,7 +62,7 @@ user_seed(name, email, resume_file_name, resume_text, applied_title, fit_score, 
   VALUES
     (
       'Olivia Harris',
-      'olivia.harris.au@example.com',
+      'olivia.harris@example.com.au',
       'resume.md',
       'Olivia Harris is a Brisbane-based veterinary technician with seven years of companion animal clinic experience. She supports triage, patient restraint, anaesthetic monitoring, dental procedures, pathology sample handling, radiography workflows, medication preparation, client education, and stock control. Olivia has worked with practice management systems, maintained treatment notes, supported emergency presentations, and coordinated discharge instructions with veterinarians and pet owners across Queensland clinics.',
       'Veterinary Technician - Companion Animal Clinic',
@@ -57,7 +72,7 @@ user_seed(name, email, resume_file_name, resume_text, applied_title, fit_score, 
     ),
     (
       'Dr James Nguyen',
-      'james.nguyen.au@example.com',
+      'james.nguyen@example.com.au',
       'resume.md',
       'Dr James Nguyen is a Melbourne veterinarian registered in Australia with nine years of small animal practice experience. He performs consultations, diagnostic workups, soft tissue surgery, dentistry, vaccination programs, chronic disease management, emergency stabilisation, imaging interpretation, pathology review, and client communication. James has mentored graduate vets, improved clinical protocols, and worked with nurses and reception teams to improve continuity of care.',
       'Veterinarian - Small Animal Practice',
@@ -67,7 +82,7 @@ user_seed(name, email, resume_file_name, resume_text, applied_title, fit_score, 
     ),
     (
       'Priya Patel',
-      'priya.patel.au@example.com',
+      'priya.patel@example.com.au',
       'resume.md',
       'Priya Patel is a Sydney front desk receptionist with six years of healthcare and veterinary reception experience. She manages appointment books, multi-line phones, payment processing, client intake, patient arrivals, vaccination reminders, insurance paperwork, retail product enquiries, and sensitive conversations with pet owners. Priya has used cloud booking systems, EFTPOS terminals, and practice management software while coordinating urgent visits with clinical teams.',
       'Front Desk Receptionist - Veterinary Clinic',
@@ -77,7 +92,7 @@ user_seed(name, email, resume_file_name, resume_text, applied_title, fit_score, 
     ),
     (
       'Michael O''Connor',
-      'michael.oconnor.au@example.com',
+      'michael.oconnor@example.com.au',
       'resume.md',
       'Michael O''Connor is a Perth accountant with eight years of experience across small business, payroll, BAS preparation, accounts payable, accounts receivable, reconciliations, month-end close, management reporting, budgeting, and Xero. He has supported multi-site service businesses, worked with external tax advisors, improved invoice approval processes, and prepared financial packs for operational managers.',
       'Accountant - Veterinary Services Group',

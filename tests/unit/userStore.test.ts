@@ -36,8 +36,8 @@ import {
 
 const userRow = {
   id: 7,
-  name: "Ada Lovelace",
-  email: "ada@example.com",
+  name: "Priya Patel",
+  email: "priya@example.com.au",
   role: "user" as const,
   password_hash: "hash",
   created_at: "2026-06-14T10:00:00.000Z"
@@ -52,17 +52,17 @@ describe("userStore", () => {
     queryPostgres.mockResolvedValueOnce({ rows: [userRow] });
 
     await expect(
-      createUser({ name: "Ada Lovelace", email: "ADA@EXAMPLE.COM", passwordHash: "hash" })
+      createUser({ name: "Priya Patel", email: "PRIYA@EXAMPLE.COM.AU", passwordHash: "hash" })
     ).resolves.toEqual({
       id: 7,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
+      name: "Priya Patel",
+      email: "priya@example.com.au",
       role: "user",
       createdAt: "2026-06-14T10:00:00.000Z"
     });
     expect(queryPostgres).toHaveBeenCalledWith("users.create", [
-      "Ada Lovelace",
-      "ada@example.com",
+      "Priya Patel",
+      "priya@example.com.au",
       "hash"
     ]);
   });
@@ -71,24 +71,24 @@ describe("userStore", () => {
     queryPostgres.mockRejectedValueOnce({ code: "23505" });
 
     await expect(
-      createUser({ name: "Ada Lovelace", email: "ada@example.com", passwordHash: "hash" })
+      createUser({ name: "Priya Patel", email: "priya@example.com.au", passwordHash: "hash" })
     ).rejects.toThrow("An account with that email already exists.");
   });
 
   it("finds a user by email with the stored password hash", async () => {
     queryPostgres.mockResolvedValueOnce({ rows: [userRow] });
 
-    await expect(findUserByEmail("ADA@EXAMPLE.COM")).resolves.toEqual({
+    await expect(findUserByEmail("PRIYA@EXAMPLE.COM.AU")).resolves.toEqual({
       user: {
         id: 7,
-        name: "Ada Lovelace",
-        email: "ada@example.com",
+        name: "Priya Patel",
+        email: "priya@example.com.au",
         role: "user",
         createdAt: "2026-06-14T10:00:00.000Z"
       },
       passwordHash: "hash"
     });
-    expect(queryPostgres).toHaveBeenCalledWith("users.findByEmail", ["ada@example.com"]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.findByEmail", ["priya@example.com.au"]);
   });
 
   it("returns undefined when no user matches the email", async () => {
@@ -98,19 +98,19 @@ describe("userStore", () => {
   });
 
   it("updates profile fields with normalized email", async () => {
-    queryPostgres.mockResolvedValueOnce({ rows: [{ ...userRow, name: "Ada Byron" }] });
+    queryPostgres.mockResolvedValueOnce({ rows: [{ ...userRow, name: "Priya Patel Updated" }] });
 
     await expect(
-      updateUserProfile({ id: 7, name: "Ada Byron", email: "ADA@EXAMPLE.COM" })
+      updateUserProfile({ id: 7, name: "Priya Patel Updated", email: "PRIYA@EXAMPLE.COM.AU" })
     ).resolves.toMatchObject({
       id: 7,
-      name: "Ada Byron",
-      email: "ada@example.com"
+      name: "Priya Patel Updated",
+      email: "priya@example.com.au"
     });
     expect(queryPostgres).toHaveBeenCalledWith("users.updateProfile", [
       7,
-      "Ada Byron",
-      "ada@example.com"
+      "Priya Patel Updated",
+      "priya@example.com.au"
     ]);
   });
 
@@ -118,7 +118,7 @@ describe("userStore", () => {
     queryPostgres.mockRejectedValueOnce({ code: "23505" });
 
     await expect(
-      updateUserProfile({ id: 7, name: "Ada Lovelace", email: "ada@example.com" })
+      updateUserProfile({ id: 7, name: "Priya Patel", email: "priya@example.com.au" })
     ).rejects.toThrow("An account with that email already exists.");
   });
 
@@ -130,8 +130,8 @@ describe("userStore", () => {
     await expect(listUsers(25)).resolves.toEqual([
       {
         id: 7,
-        name: "Ada Lovelace",
-        email: "ada@example.com",
+        name: "Priya Patel",
+        email: "priya@example.com.au",
         role: "user",
         createdAt: "2026-06-14T10:00:00.000Z",
         applicationCount: 3
@@ -145,7 +145,7 @@ describe("userStore", () => {
       rows: [{
         ...userRow,
         application_count: 2,
-        matched_terms: ["PostgreSQL", "TypeScript"],
+        matched_terms: ["client intake", "phone triage"],
         resume_json: {
           id: 11,
           userId: 7,
@@ -161,7 +161,7 @@ describe("userStore", () => {
           userId: 7,
           status: "completed",
           applicationDate: "2026-06-14",
-          jobTitle: "Platform Engineer",
+          jobTitle: "Veterinary Receptionist",
           fitScore: 82,
           fitLevel: "high",
           createdAt: "2026-06-14T12:00:00.000Z",
@@ -171,16 +171,16 @@ describe("userStore", () => {
     });
 
     await expect(
-      listAdminUserDetails({ search: " postgres ", semanticUserIds: [7, 9], limit: 25 })
+      listAdminUserDetails({ search: " client intake ", semanticUserIds: [7, 9], limit: 25 })
     ).resolves.toEqual([
       {
         id: 7,
-        name: "Ada Lovelace",
-        email: "ada@example.com",
+        name: "Priya Patel",
+        email: "priya@example.com.au",
         role: "user",
         createdAt: "2026-06-14T10:00:00.000Z",
         applicationCount: 2,
-        matchedTerms: ["PostgreSQL", "TypeScript"],
+        matchedTerms: ["client intake", "phone triage"],
         latestResume: {
           id: 11,
           userId: 7,
@@ -197,7 +197,7 @@ describe("userStore", () => {
             userId: 7,
             status: "completed",
             applicationDate: "2026-06-14",
-            jobTitle: "Platform Engineer",
+            jobTitle: "Veterinary Receptionist",
             fitScore: 82,
             fitLevel: "high",
             createdAt: "2026-06-14T12:00:00.000Z",
@@ -206,7 +206,7 @@ describe("userStore", () => {
         ]
       }
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["postgres", [7, 9], 25]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["client intake", [7, 9], 25]);
   });
 
   it("upserts an admin with normalized email", async () => {

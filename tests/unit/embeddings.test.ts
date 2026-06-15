@@ -15,7 +15,12 @@ describe("cosineSimilarity", () => {
     expect(cosineSimilarity([1, 2], [0, 0])).toBe(0);
   });
 
-  it("compares only the shared vector dimensions", () => {
-    expect(cosineSimilarity([1, 0, 100], [1, 0])).toBeCloseTo(1);
+  it("includes unmatched dimensions in vector magnitude", () => {
+    expect(cosineSimilarity([1, 0, 100], [1, 0])).toBeCloseTo(0.01, 2);
+  });
+
+  it("returns 0 for invalid vectors", () => {
+    expect(cosineSimilarity([], [1, 2])).toBe(0);
+    expect(cosineSimilarity([Number.NaN], [1])).toBe(0);
   });
 });

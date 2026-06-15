@@ -17,6 +17,10 @@ type ResumeVersionDownloadRow = Omit<ResumeVersionRow, "character_count" | "crea
   file_bytes: Buffer;
 };
 
+type LatestResumeVersionRow = ResumeVersionRow & {
+  resume_text: string;
+};
+
 const mapResumeVersionRow = (row: ResumeVersionRow): ResumeVersionRecord => ({
   id: row.id,
   userId: row.user_id,
@@ -61,6 +65,19 @@ export const createResumeVersion = async ({
 export const listResumeVersions = async (userId: number): Promise<ResumeVersionRecord[]> => {
   const result = await queryPostgres<ResumeVersionRow>(queries.resumeVersions.listForUser, [userId]);
   return result.rows.map(mapResumeVersionRow);
+};
+
+export const getLatestResumeVersion = async (userId: number) => {
+  const result = await queryPostgres<LatestResumeVersionRow>(queries.resumeVersions.latestForUser, [userId]);
+  const row = result.rows[0];
+  if (!row) {
+    return undefined;
+  }
+
+  return {
+    ...mapResumeVersionRow(row),
+    resumeText: row.resume_text
+  };
 };
 
 export const getResumeVersionDownload = async ({

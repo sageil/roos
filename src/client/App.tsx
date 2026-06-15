@@ -4,7 +4,6 @@ import {
   Archive,
   ArrowUpRight,
   BriefcaseBusiness,
-  CalendarDays,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -12,6 +11,8 @@ import {
   ClipboardList,
   Database,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   LockKeyhole,
   LogIn,
@@ -31,7 +32,7 @@ import {
   UsersRound,
   XCircle
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AdminUserDetailRecord,
   AdminUsersResponse,
@@ -39,11 +40,13 @@ import type {
   AnalyzeResponse,
   CreateJobPostingResponse,
   JobRecord,
+  JobPostingApplicationsResponse,
   JobPostingRecord,
   JobPostingsResponse,
   JobsResponse,
   LoginResponse,
   ProfileResponse,
+  PrivacyPreviewResponse,
   RegisterResponse,
   RequirementAssessment,
   ResumeAnalysis,
@@ -55,22 +58,51 @@ import type {
 } from "../shared/types";
 
 type Status = "idle" | "loading" | "success" | "error";
-
-type HealthResponse = {
-  models: {
-    llm: string;
-    embedding: string;
-  };
-  storage?: {
-    postgres: {
-      ok: boolean;
-      extension: string;
-      error?: string;
-    };
-  };
-};
+type ActiveView = "analysis" | "applications" | "jobs" | "profile" | "adminJobs" | "adminUsers" | "systemHealth";
 
 const authStorageKey = "resume-analyzer-token";
+
+const defaultAuthenticatedView: ActiveView = "applications";
+const adminOnlyViews = new Set<ActiveView>(["adminJobs", "adminUsers", "systemHealth"]);
+const passwordRuleLabels = {
+  length: "At least 12 characters",
+  lowercase: "One lowercase letter",
+  uppercase: "One uppercase letter",
+  number: "One number"
+};
+
+const routeForView: Record<ActiveView, string> = {
+  analysis: "/analysis",
+  applications: "/applications",
+  jobs: "/jobs",
+  profile: "/profile",
+  adminJobs: "/admin/jobs",
+  adminUsers: "/admin/users",
+  systemHealth: "/admin/health"
+};
+
+const viewFromPath = (path: string): ActiveView => {
+  const normalizedPath = path.replace(/\/+$/, "") || "/";
+  switch (normalizedPath) {
+    case "/":
+    case "/applications":
+      return "applications";
+    case "/jobs":
+      return "jobs";
+    case "/profile":
+      return "profile";
+    case "/admin/jobs":
+      return "adminJobs";
+    case "/admin/users":
+      return "adminUsers";
+    case "/admin/health":
+      return "systemHealth";
+    case "/analysis":
+      return "analysis";
+    default:
+      return defaultAuthenticatedView;
+  }
+};
 
 type PrivacyRedactionForm = {
   name: string;
@@ -107,6 +139,20 @@ const serializePrivacyRedactions = (form: PrivacyRedactionForm) => ({
   phones: splitPrivacyLines(form.phones),
   addressLines: splitPrivacyLines(form.addressLines),
   links: splitPrivacyLines(form.links)
+});
+
+const privacyPreviewToForm = (
+  preview: PrivacyPreviewResponse,
+  fallback: PrivacyRedactionForm
+): PrivacyRedactionForm => ({
+  name: preview.privacyRedactions.names[0] || preview.privacyRedactions.name || fallback.name,
+  emails: (preview.privacyRedactions.emails.length > 0
+    ? preview.privacyRedactions.emails
+    : splitPrivacyLines(fallback.emails)
+  ).join("\n"),
+  phones: preview.privacyRedactions.phones.join("\n"),
+  addressLines: preview.privacyRedactions.addressLines.join("\n"),
+  links: preview.privacyRedactions.links.join("\n")
 });
 
 const redactionTotalLabel = (total: number) => `${total} privacy ${total === 1 ? "value" : "values"} removed`;
@@ -175,10 +221,14 @@ const StatusBadge = ({
 
 const PrivacyReviewFields = ({
   value,
-  onChange
+  onChange,
+  status = "idle",
+  error = ""
 }: {
   value: PrivacyRedactionForm;
   onChange: (value: PrivacyRedactionForm) => void;
+  status?: Status;
+  error?: string;
 }) => {
   const update = (field: keyof PrivacyRedactionForm) => (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -190,9 +240,20 @@ const PrivacyReviewFields = ({
         <ShieldCheck size={18} />
         <div>
           <strong>Privacy review</strong>
-          <span>Confirm personal details to remove before storage and analysis.</span>
+          <span>
+            {status === "loading"
+              ? "Scanning the resume for personal details before storage and analysis."
+              : "Confirm personal details to remove before storage and analysis."}
+          </span>
         </div>
       </div>
+
+      {error && (
+        <div className="notice error compact-notice">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+        </div>
+      )}
 
       <label className="field compact-field">
         <span>Name to remove</span>
@@ -360,6 +421,69 @@ const ApplicationAnalysisList = ({
   );
 };
 
+const InterviewQuestionsEditor = ({
+  questions,
+  onSave,
+  compact = false
+}: {
+  questions: string[];
+  onSave: (questions: string[]) => Promise<void> | void;
+  compact?: boolean;
+}) => {
+  const [draft, setDraft] = useState(questions.join("\n"));
+  const [status, setStatus] = useState<Status>("idle");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDraft(questions.join("\n"));
+    setStatus("idle");
+    setError("");
+  }, [questions]);
+
+  const save = async () => {
+    setStatus("loading");
+    setError("");
+    try {
+      const nextQuestions = draft
+        .split(/\r?\n/)
+        .map((question) => question.trim())
+        .filter(Boolean);
+      await onSave(nextQuestions);
+      setDraft(nextQuestions.join("\n"));
+      setStatus("success");
+    } catch (caught) {
+      setStatus("error");
+      setError(caught instanceof Error ? caught.message : "Interview question update failed.");
+    }
+  };
+
+  return (
+    <section className={compact ? "application-detail-block" : "surface-card"}>
+      <div className="panel-heading split-heading">
+        <div>
+          <ClipboardList size={compact ? 16 : 19} />
+          <h2>Interview questions</h2>
+        </div>
+        {status === "success" && <StatusBadge tone="success">Saved</StatusBadge>}
+      </div>
+      <label className="field compact-field">
+        <span>One question per line</span>
+        <textarea
+          className="compact-textarea interview-question-editor"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Add interview questions for the hiring team"
+        />
+      </label>
+      <button className="secondary-button compact-action" disabled={status === "loading"} type="button" onClick={() => void save()}>
+        {status === "loading" ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+        Save questions
+      </button>
+      {status === "error" && <p className="compact-notice error">{error}</p>}
+    </section>
+  );
+};
+
 const scoreBreakdownEntries = (analysis: ResumeAnalysis) => {
   return [
     ["Minimum qualifications", analysis.scoreBreakdown.minimumQualifications],
@@ -498,7 +622,15 @@ const HREvaluationDetails = ({
   );
 };
 
-const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) => (
+const ApplicationAnalysisDetails = ({
+  analysis,
+  isAdmin,
+  onSaveInterviewQuestions
+}: {
+  analysis: ResumeAnalysis;
+  isAdmin: boolean;
+  onSaveInterviewQuestions?: (questions: string[]) => Promise<void> | void;
+}) => (
   <div className="application-analysis-grid">
     <section className="application-detail-block application-summary-block">
       <h3>Candidate summary</h3>
@@ -510,7 +642,13 @@ const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) 
     <ApplicationAnalysisList title="Risks" items={analysis.risks} />
     <ApplicationAnalysisList title="Recommendations" items={analysis.recommendations} />
     <ApplicationAnalysisList title="Keywords" items={analysis.suggestedKeywords} />
-    <ApplicationAnalysisList title="Interview questions" items={analysis.interviewQuestions} />
+    {isAdmin && onSaveInterviewQuestions && (
+      <InterviewQuestionsEditor
+        compact
+        questions={analysis.interviewQuestions}
+        onSave={onSaveInterviewQuestions}
+      />
+    )}
     {analysis.evidence.length > 0 && (
       <section className="application-detail-block application-summary-block">
         <h3>Ranked evidence</h3>
@@ -532,10 +670,16 @@ const ApplicationAnalysisDetails = ({ analysis }: { analysis: ResumeAnalysis }) 
 
 const ApplicationDetailsBody = ({
   job,
-  onUseJob
+  isAdmin,
+  onUseJob,
+  onDownloadAssessment,
+  onSaveInterviewQuestions
 }: {
   job: JobRecord;
+  isAdmin: boolean;
   onUseJob?: (job: JobRecord) => void;
+  onDownloadAssessment?: (job: JobRecord) => void;
+  onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
 }) => (
   <div className="application-details">
     <div className="application-meta-grid">
@@ -549,7 +693,17 @@ const ApplicationDetailsBody = ({
       <ApplicationMeta label="Updated" value={job.updatedAt} />
     </div>
 
-    {job.analysis && <ApplicationAnalysisDetails analysis={job.analysis} />}
+    {job.analysis && (
+      <ApplicationAnalysisDetails
+        analysis={job.analysis}
+        isAdmin={isAdmin}
+        onSaveInterviewQuestions={
+          isAdmin && onSaveInterviewQuestions
+            ? (questions) => onSaveInterviewQuestions(job, questions)
+            : undefined
+        }
+      />
+    )}
 
     {job.llmRecommendation && (
       <section className="application-detail-block">
@@ -572,11 +726,25 @@ const ApplicationDetailsBody = ({
       </section>
     )}
 
-    {onUseJob && (
-      <button className="secondary-button application-action" type="button" onClick={() => onUseJob(job)}>
-        <Target size={16} />
-        Use for new analysis
-      </button>
+    {(onUseJob || (onDownloadAssessment && job.analysis)) && (
+      <div className="application-actions">
+        {onUseJob && (
+          <button className="secondary-button application-action" type="button" onClick={() => onUseJob(job)}>
+            <Target size={16} />
+            Use for new analysis
+          </button>
+        )}
+        {onDownloadAssessment && job.analysis && (
+          <button
+            className="secondary-button application-action"
+            type="button"
+            onClick={() => onDownloadAssessment(job)}
+          >
+            <Download size={16} />
+            Download assessment
+          </button>
+        )}
+      </div>
     )}
   </div>
 );
@@ -584,11 +752,15 @@ const ApplicationDetailsBody = ({
 const ProfileApplications = ({
   jobs,
   isAdmin,
-  onUseJob
+  onUseJob,
+  onDownloadAssessment,
+  onSaveInterviewQuestions
 }: {
   jobs: JobRecord[];
   isAdmin: boolean;
   onUseJob: (job: JobRecord) => void;
+  onDownloadAssessment?: (job: JobRecord) => void;
+  onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
 }) => {
   const [expandedJobId, setExpandedJobId] = useState<number | null>(jobs[0]?.id ?? null);
 
@@ -641,7 +813,13 @@ const ProfileApplications = ({
                 )}
 
                 {expanded && (
-                  <ApplicationDetailsBody job={job} onUseJob={onUseJob} />
+                  <ApplicationDetailsBody
+                    job={job}
+                    isAdmin={isAdmin}
+                    onUseJob={onUseJob}
+                    onDownloadAssessment={isAdmin ? onDownloadAssessment : undefined}
+                    onSaveInterviewQuestions={isAdmin ? onSaveInterviewQuestions : undefined}
+                  />
                 )}
               </article>
             );
@@ -659,7 +837,9 @@ const AdminUsersPanel = ({
   error,
   onSearchChange,
   onRefresh,
-  onDownloadResume
+  onDownloadResume,
+  onDownloadAssessment,
+  onSaveInterviewQuestions
 }: {
   users: AdminUserDetailRecord[];
   search: string;
@@ -668,6 +848,8 @@ const AdminUsersPanel = ({
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
   onDownloadResume: (resume: ResumeVersionRecord) => void;
+  onDownloadAssessment: (job: JobRecord) => void;
+  onSaveInterviewQuestions: (job: JobRecord, questions: string[]) => Promise<void> | void;
 }) => {
   const [expandedApplicationId, setExpandedApplicationId] = useState<number | null>(null);
 
@@ -696,7 +878,7 @@ const AdminUsersPanel = ({
               <input
                 value={search}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="TypeScript, Java, PostgreSQL, product manager..."
+                placeholder="client intake, phone triage, anaesthetic monitoring..."
               />
             </div>
           </label>
@@ -761,11 +943,16 @@ const AdminUsersPanel = ({
                     </section>
 
                     <section className="admin-user-section">
-                      <h3>Matched terms</h3>
+                      <div className="section-title-row">
+                        <h3>Matched terms</h3>
+                        {adminUser.matchedTerms.length > 0 && (
+                          <span>{adminUser.matchedTerms.length}</span>
+                        )}
+                      </div>
                       {adminUser.matchedTerms.length > 0 ? (
-                        <div className="tag-list">
+                        <div className="matched-term-list">
                           {adminUser.matchedTerms.slice(0, 12).map((term) => (
-                            <span className="tag-chip" key={term}>{term}</span>
+                            <span className="matched-term-chip" key={term}>{term}</span>
                           ))}
                         </div>
                       ) : (
@@ -805,7 +992,14 @@ const AdminUsersPanel = ({
                                 <p className="application-preview">{job.llmRecommendation}</p>
                               )}
 
-                              {expanded && <ApplicationDetailsBody job={job} />}
+                              {expanded && (
+                                <ApplicationDetailsBody
+                                  job={job}
+                                  isAdmin
+                                  onDownloadAssessment={onDownloadAssessment}
+                                  onSaveInterviewQuestions={onSaveInterviewQuestions}
+                                />
+                              )}
                             </article>
                           );
                         })}
@@ -822,24 +1016,291 @@ const AdminUsersPanel = ({
   );
 };
 
+const PostingApplicationsPanel = ({
+  posting,
+  jobs,
+  status,
+  error,
+  panelRef,
+  onDownloadAssessment,
+  onSaveInterviewQuestions
+}: {
+  posting?: JobPostingRecord;
+  jobs: JobRecord[];
+  status: Status;
+  error: string;
+  panelRef?: React.Ref<HTMLElement>;
+  onDownloadAssessment?: (job: JobRecord) => void;
+  onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
+}) => {
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(jobs[0]?.id ?? null);
+
+  useEffect(() => {
+    setExpandedJobId(jobs[0]?.id ?? null);
+  }, [jobs]);
+
+  if (!posting && status === "idle") {
+    return null;
+  }
+
+  return (
+    <section className="surface-card full posting-applications-panel" ref={panelRef}>
+      <div className="panel-heading split-heading">
+        <div>
+          <UsersRound size={19} />
+          <h2>{posting ? `Applications for ${posting.title}` : "Posting applications"}</h2>
+        </div>
+        <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
+          {status === "loading" ? "Loading" : `${jobs.length} shown`}
+        </StatusBadge>
+      </div>
+
+      {status === "error" && (
+        <div className="notice error">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {status === "loading" ? (
+        <div className="empty-state compact-empty">
+          <div className="empty-mark">
+            <Loader2 className="spin" size={34} />
+          </div>
+          <h2>Loading applications</h2>
+          <p>Fetching candidates and stored LLM assessments for this posting.</p>
+        </div>
+      ) : jobs.length === 0 ? (
+        <p className="muted">No applications for this posting yet.</p>
+      ) : (
+        <div className="application-list">
+          {jobs.map((job) => {
+            const expanded = expandedJobId === job.id;
+            return (
+              <article className={`application-card${expanded ? " expanded" : ""}`} key={job.id}>
+                <button
+                  className="application-summary"
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedJobId(expanded ? null : job.id)}
+                >
+                  <span className="application-chevron">
+                    {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </span>
+                  <span className="application-title">
+                    <strong>{job.userName ?? "Candidate"}</strong>
+                    <span>{job.userEmail ?? "No email"} | {job.applicationDate} | {job.status}</span>
+                    <span>{job.jobTitle}</span>
+                  </span>
+                  <JobFitBadge job={job} />
+                </button>
+
+                {!expanded && job.llmRecommendation && (
+                  <p className="application-preview">{job.llmRecommendation}</p>
+                )}
+
+                {expanded && (
+	                  <ApplicationDetailsBody
+	                    job={job}
+	                    isAdmin
+	                    onDownloadAssessment={onDownloadAssessment}
+	                    onSaveInterviewQuestions={onSaveInterviewQuestions}
+	                  />
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+};
+
+const ApplicationSearchPanel = ({
+  jobs,
+  search,
+  status,
+  error,
+  isAdmin,
+  onSearchChange,
+  onRefresh,
+  onUseJob,
+  onDownloadAssessment,
+  onSaveInterviewQuestions
+}: {
+  jobs: JobRecord[];
+  search: string;
+  status: Status;
+  error: string;
+  isAdmin: boolean;
+  onSearchChange: (value: string) => void;
+  onRefresh: () => void;
+  onUseJob: (job: JobRecord) => void;
+  onDownloadAssessment?: (job: JobRecord) => void;
+  onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
+}) => {
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(jobs[0]?.id ?? null);
+
+  useEffect(() => {
+    setExpandedJobId(jobs[0]?.id ?? null);
+  }, [jobs]);
+
+  return (
+    <section className="applications-view">
+      <section className="surface-card full">
+        <div className="panel-heading split-heading">
+          <div>
+            <Database size={19} />
+            <h2>{isAdmin ? "Applications" : "My Applications"}</h2>
+          </div>
+          <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
+            {status === "loading" ? "Searching" : `${jobs.length} shown`}
+          </StatusBadge>
+        </div>
+
+        <div className="admin-user-toolbar">
+          <label className="field">
+            <span>Search applications by candidate, role, resume evidence, recommendations, or related meaning</span>
+            <div className="input-with-icon">
+              <Search size={18} />
+              <input
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="client intake, phone triage, animal handling, veterinary technician..."
+              />
+            </div>
+          </label>
+          <button className="secondary-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
+            {status === "loading" ? <Loader2 className="spin" size={18} /> : <SearchCheck size={18} />}
+            Search applications
+          </button>
+        </div>
+
+        {status === "error" && (
+          <div className="notice error">
+            <AlertCircle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {status === "loading" ? (
+          <div className="empty-state compact-empty">
+            <div className="empty-mark">
+              <Loader2 className="spin" size={34} />
+            </div>
+            <h2>Searching applications</h2>
+            <p>Finding exact and semantic matches across stored assessments and resume evidence.</p>
+          </div>
+        ) : jobs.length === 0 ? (
+          <p className="muted">No applications match the current search.</p>
+        ) : (
+          <div className="application-list">
+            {jobs.map((job) => {
+              const expanded = expandedJobId === job.id;
+              return (
+                <article className={`application-card${expanded ? " expanded" : ""}`} key={job.id}>
+                  <button
+                    className="application-summary"
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedJobId(expanded ? null : job.id)}
+                  >
+                    <span className="application-chevron">
+                      {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    </span>
+                    <span className="application-title">
+                      <strong>{job.jobTitle}</strong>
+                      <span>
+                        {job.applicationDate} | {job.status}
+                        {job.jobPostingTitle ? ` | ${job.jobPostingTitle}` : ""}
+                      </span>
+                      {isAdmin && job.userEmail && (
+                        <span>{job.userName ?? "Candidate"} | {job.userEmail}</span>
+                      )}
+                    </span>
+                    <JobFitBadge job={job} />
+                  </button>
+
+                  {!expanded && job.llmRecommendation && (
+                    <p className="application-preview">{job.llmRecommendation}</p>
+                  )}
+
+                  {expanded && (
+                    <ApplicationDetailsBody
+                      job={job}
+                      isAdmin={isAdmin}
+                      onUseJob={onUseJob}
+                      onDownloadAssessment={isAdmin ? onDownloadAssessment : undefined}
+                      onSaveInterviewQuestions={isAdmin ? onSaveInterviewQuestions : undefined}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </section>
+  );
+};
+
 const JobSearchPanel = ({
   postings,
   search,
   status,
   error,
+  selectedPostingId,
+  selectedPostingApplications,
+  selectedPostingApplicationsStatus,
+  selectedPostingApplicationsError,
   onSearchChange,
   onRefresh,
-  onUsePosting
+  onUsePosting,
+  onViewApplications,
+  onDownloadAssessment,
+  onSaveInterviewQuestions,
+  isAdmin,
+  hasResume
 }: {
   postings: JobPostingRecord[];
   search: string;
   status: Status;
   error: string;
+  selectedPostingId: number | null;
+  selectedPostingApplications: JobRecord[];
+  selectedPostingApplicationsStatus: Status;
+  selectedPostingApplicationsError: string;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
   onUsePosting: (posting: JobPostingRecord) => void;
-}) => (
-  <section className="jobs-view">
+  onViewApplications?: (posting: JobPostingRecord) => void;
+  onDownloadAssessment?: (job: JobRecord) => void;
+  onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
+  isAdmin: boolean;
+  hasResume: boolean;
+}) => {
+  const applicationsPanelRef = useRef<HTMLElement | null>(null);
+  const selectedPosting = selectedPostingId
+    ? postings.find((posting) => posting.id === selectedPostingId)
+    : undefined;
+
+  useEffect(() => {
+    if (!selectedPostingId) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      applicationsPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedPostingId, selectedPostingApplicationsStatus]);
+
+  return (
+    <section className="jobs-view">
     <section className="surface-card full">
       <div className="panel-heading split-heading">
         <div>
@@ -859,7 +1320,7 @@ const JobSearchPanel = ({
             <input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="financial controls, customer success, cloud operations..."
+              placeholder="appointment scheduling, client intake, anaesthetic monitoring..."
             />
           </div>
         </label>
@@ -887,9 +1348,19 @@ const JobSearchPanel = ({
                   <strong>{posting.title}</strong>
                   <span>{posting.status} | {posting.createdAt}</span>
                 </div>
-                <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
-                  {posting.matchCount ?? 0} applications
-                </StatusBadge>
+                {onViewApplications ? (
+                  <button
+                    className={`status-badge application-count-button${selectedPostingId === posting.id ? " active" : ""}`}
+                    type="button"
+                    onClick={() => onViewApplications(posting)}
+                  >
+                    {posting.matchCount ?? 0} applications
+                  </button>
+                ) : (
+                  <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
+                    {posting.matchCount ?? 0} applications
+                  </StatusBadge>
+                )}
               </div>
 
               {posting.skills.length > 0 && (
@@ -908,8 +1379,8 @@ const JobSearchPanel = ({
                   Top {posting.topFitScore ?? 0}/100
                 </StatusBadge>
                 <button className="secondary-button" type="button" onClick={() => onUsePosting(posting)}>
-                  <Target size={16} />
-                  Match my resume
+                  {hasResume ? <Target size={16} /> : <Upload size={16} />}
+                  {isAdmin ? "Analyze candidate" : hasResume ? "Apply" : "Upload resume to apply"}
                 </button>
               </div>
             </article>
@@ -917,8 +1388,18 @@ const JobSearchPanel = ({
         )}
       </div>
     </section>
+    <PostingApplicationsPanel
+      posting={selectedPosting}
+      jobs={selectedPostingApplications}
+      status={selectedPostingApplicationsStatus}
+      error={selectedPostingApplicationsError}
+      panelRef={applicationsPanelRef}
+      onDownloadAssessment={onDownloadAssessment}
+      onSaveInterviewQuestions={onSaveInterviewQuestions}
+    />
   </section>
-);
+  );
+};
 
 const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
   <section className="admin-overview">
@@ -1186,11 +1667,6 @@ const SystemHealthPanel = ({
 );
 
 export const App = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [analysisPrivacy, setAnalysisPrivacy] = useState<PrivacyRedactionForm>(() => defaultPrivacyRedactionForm());
-  const [jobTitle, setJobTitle] = useState("Senior Software Engineer");
-  const [applicationDate, setApplicationDate] = useState(today());
-  const [jobDescription, setJobDescription] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
@@ -1200,8 +1676,14 @@ export const App = () => {
   const [jobSearch, setJobSearch] = useState("");
   const [jobSearchStatus, setJobSearchStatus] = useState<Status>("idle");
   const [jobSearchError, setJobSearchError] = useState("");
-  const [selectedJobPostingId, setSelectedJobPostingId] = useState("");
-  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [applicationSearch, setApplicationSearch] = useState("");
+  const [applicationSearchResults, setApplicationSearchResults] = useState<JobRecord[]>([]);
+  const [applicationSearchStatus, setApplicationSearchStatus] = useState<Status>("idle");
+  const [applicationSearchError, setApplicationSearchError] = useState("");
+  const [selectedPostingApplicationsId, setSelectedPostingApplicationsId] = useState<number | null>(null);
+  const [selectedPostingApplications, setSelectedPostingApplications] = useState<JobRecord[]>([]);
+  const [selectedPostingApplicationsStatus, setSelectedPostingApplicationsStatus] = useState<Status>("idle");
+  const [selectedPostingApplicationsError, setSelectedPostingApplicationsError] = useState("");
   const [token, setToken] = useState(() => localStorage.getItem(authStorageKey) || "");
   const [user, setUser] = useState<UserRecord | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -1217,14 +1699,17 @@ export const App = () => {
   const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null);
   const [systemHealthStatus, setSystemHealthStatus] = useState<Status>("idle");
   const [systemHealthError, setSystemHealthError] = useState("");
-  const [activeView, setActiveView] = useState<"dashboard" | "jobs" | "profile" | "adminJobs" | "adminUsers" | "systemHealth">("dashboard");
+  const [activeView, setActiveView] = useState<ActiveView>(() => viewFromPath(window.location.pathname));
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
+  const [profileNotice, setProfileNotice] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
   const [profileError, setProfileError] = useState("");
   const [resumeVersions, setResumeVersions] = useState<ResumeVersionRecord[]>([]);
   const [resumeUploadFile, setResumeUploadFile] = useState<File | null>(null);
   const [resumeUploadPrivacy, setResumeUploadPrivacy] = useState<PrivacyRedactionForm>(() => defaultPrivacyRedactionForm());
+  const [resumeUploadPrivacyStatus, setResumeUploadPrivacyStatus] = useState<Status>("idle");
+  const [resumeUploadPrivacyError, setResumeUploadPrivacyError] = useState("");
   const [resumeUploadInputKey, setResumeUploadInputKey] = useState(0);
   const [resumeUploadStatus, setResumeUploadStatus] = useState<Status>("idle");
   const [resumeUploadError, setResumeUploadError] = useState("");
@@ -1232,6 +1717,9 @@ export const App = () => {
   const [registrationName, setRegistrationName] = useState("");
   const [registrationEmail, setRegistrationEmail] = useState("");
   const [registrationPassword, setRegistrationPassword] = useState("");
+  const [registrationPasswordConfirmation, setRegistrationPasswordConfirmation] = useState("");
+  const [showRegistrationPassword, setShowRegistrationPassword] = useState(false);
+  const [showRegistrationPasswordConfirmation, setShowRegistrationPasswordConfirmation] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<Status>("idle");
   const [registrationError, setRegistrationError] = useState("");
   const [registeredUser, setRegisteredUser] = useState<UserRecord | null>(null);
@@ -1241,10 +1729,31 @@ export const App = () => {
   const [newPostingSkills, setNewPostingSkills] = useState<string[]>([]);
   const [postingStatus, setPostingStatus] = useState<Status>("idle");
   const [postingError, setPostingError] = useState("");
+  const resumeUploadFormRef = useRef<HTMLFormElement | null>(null);
 
   const authHeaders = (activeToken = token) => ({
     Authorization: `Bearer ${activeToken}`
   });
+
+  const registrationPasswordChecks = {
+    length: registrationPassword.length >= 12,
+    lowercase: /[a-z]/.test(registrationPassword),
+    uppercase: /[A-Z]/.test(registrationPassword),
+    number: /[0-9]/.test(registrationPassword)
+  };
+  const registrationPasswordValid = Object.values(registrationPasswordChecks).every(Boolean);
+  const registrationPasswordsMatch =
+    registrationPasswordConfirmation.length > 0 && registrationPassword === registrationPasswordConfirmation;
+  const hasProfileResume = resumeVersions.length > 0;
+
+  const navigateToView = (view: ActiveView, options: { replace?: boolean } = {}) => {
+    setActiveView(view);
+    const nextPath = routeForView[view];
+    if (window.location.pathname !== nextPath) {
+      const method = options.replace ? "replaceState" : "pushState";
+      window.history[method]({}, "", nextPath);
+    }
+  };
 
   const persistSession = (nextUser: UserRecord, nextToken: string) => {
     localStorage.setItem(authStorageKey, nextToken);
@@ -1252,9 +1761,11 @@ export const App = () => {
     setUser(nextUser);
     setProfileName(nextUser.name);
     setProfileEmail(nextUser.email);
-    setAnalysisPrivacy(defaultPrivacyRedactionForm(nextUser));
     setResumeUploadPrivacy(defaultPrivacyRedactionForm(nextUser));
-    setActiveView("dashboard");
+    const nextView = adminOnlyViews.has(activeView) && nextUser.role !== "admin"
+      ? defaultAuthenticatedView
+      : activeView;
+    navigateToView(nextView, { replace: window.location.pathname !== routeForView[nextView] });
   };
 
   const clearSession = () => {
@@ -1267,6 +1778,14 @@ export const App = () => {
     setJobSearch("");
     setJobSearchStatus("idle");
     setJobSearchError("");
+    setApplicationSearch("");
+    setApplicationSearchResults([]);
+    setApplicationSearchStatus("idle");
+    setApplicationSearchError("");
+    setSelectedPostingApplicationsId(null);
+    setSelectedPostingApplications([]);
+    setSelectedPostingApplicationsStatus("idle");
+    setSelectedPostingApplicationsError("");
     setAdminOverview(null);
     setAdminUsers([]);
     setAdminUsersSearch("");
@@ -1276,11 +1795,12 @@ export const App = () => {
     setSystemHealthStatus("idle");
     setSystemHealthError("");
     setResult(null);
-    setActiveView("dashboard");
+    navigateToView(defaultAuthenticatedView, { replace: true });
     setProfileName("");
     setProfileEmail("");
-    setAnalysisPrivacy(defaultPrivacyRedactionForm());
     setResumeUploadPrivacy(defaultPrivacyRedactionForm());
+    setResumeUploadPrivacyStatus("idle");
+    setResumeUploadPrivacyError("");
     setResumeVersions([]);
     setResumeUploadRedactionTotal(null);
   };
@@ -1430,6 +1950,65 @@ export const App = () => {
     }
   };
 
+  const loadApplicationSearch = async (activeToken = token, search = applicationSearch) => {
+    if (!activeToken) {
+      setApplicationSearchResults([]);
+      return;
+    }
+
+    setApplicationSearchError("");
+    setApplicationSearchStatus("loading");
+    try {
+      const params = new URLSearchParams();
+      const trimmedSearch = search.trim();
+      if (trimmedSearch) {
+        params.set("search", trimmedSearch);
+      }
+
+      const response = await fetch(`/api/applications${params.size ? `?${params.toString()}` : ""}`, {
+        headers: authHeaders(activeToken)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Application search failed.");
+      }
+
+      setApplicationSearchResults((data as JobsResponse).jobs);
+      setApplicationSearchStatus("success");
+    } catch (caught) {
+      setApplicationSearchStatus("error");
+      setApplicationSearchError(caught instanceof Error ? caught.message : "Application search failed.");
+    }
+  };
+
+  const loadPostingApplications = async (posting: JobPostingRecord, activeToken = token) => {
+    if (!activeToken) {
+      setSelectedPostingApplications([]);
+      return;
+    }
+
+    setSelectedPostingApplicationsId(posting.id);
+    setSelectedPostingApplicationsError("");
+    setSelectedPostingApplicationsStatus("loading");
+    try {
+      const response = await fetch(`/api/admin/job-postings/${posting.id}/applications`, {
+        headers: authHeaders(activeToken)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Applications failed to load.");
+      }
+
+      setSelectedPostingApplications((data as JobPostingApplicationsResponse).jobs);
+      setSelectedPostingApplicationsStatus("success");
+    } catch (caught) {
+      setSelectedPostingApplicationsStatus("error");
+      setSelectedPostingApplicationsError(caught instanceof Error ? caught.message : "Applications failed to load.");
+    }
+  };
+
   const loadProfile = async (activeToken = token) => {
     if (!activeToken) {
       setResumeVersions([]);
@@ -1447,22 +2026,61 @@ export const App = () => {
     setUser(data.user);
     setProfileName(data.user.name);
     setProfileEmail(data.user.email);
-    setAnalysisPrivacy(defaultPrivacyRedactionForm(data.user));
     setResumeUploadPrivacy(defaultPrivacyRedactionForm(data.user));
     setResumeVersions(data.resumes);
   };
 
-  const loadHealth = async () => {
-    const response = await fetch("/api/health");
-    if (!response.ok) {
+  const previewResumePrivacy = async ({
+    resumeFile,
+    fallback,
+    onApply,
+    onStatus,
+    onError,
+    activeToken = token
+  }: {
+    resumeFile: File;
+    fallback: PrivacyRedactionForm;
+    onApply: (value: PrivacyRedactionForm) => void;
+    onStatus: (status: Status) => void;
+    onError: (message: string) => void;
+    activeToken?: string;
+  }) => {
+    if (!activeToken) {
       return;
     }
 
-    setHealth((await response.json()) as HealthResponse);
+    const payload = new FormData();
+    payload.set("resume", resumeFile);
+    onStatus("loading");
+    onError("");
+
+    try {
+      const response = await fetch("/api/resumes/privacy-preview", {
+        method: "POST",
+        headers: authHeaders(activeToken),
+        body: payload
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Privacy scan failed.");
+      }
+
+      onApply(privacyPreviewToForm(data as PrivacyPreviewResponse, fallback));
+      onStatus("success");
+    } catch (caught) {
+      onStatus("error");
+      onError(caught instanceof Error ? caught.message : "Privacy scan failed.");
+    }
   };
 
   useEffect(() => {
-    void loadHealth();
+    const handlePopState = () => {
+      setActiveView(viewFromPath(window.location.pathname));
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -1496,14 +2114,29 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    const selectedPosting = jobPostings.find((posting) => String(posting.id) === selectedJobPostingId);
-    if (!selectedPosting) {
+    if (!user || user.role === "admin" || !adminOnlyViews.has(activeView)) {
       return;
     }
 
-    setJobTitle(selectedPosting.title);
-    setJobDescription(selectedPosting.description);
-  }, [jobPostings, selectedJobPostingId]);
+    navigateToView(defaultAuthenticatedView, { replace: true });
+  }, [activeView, user?.role]);
+
+  useEffect(() => {
+    if (activeView !== "profile" || !profileNotice) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      resumeUploadFormRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+      const input = resumeUploadFormRef.current?.querySelector<HTMLInputElement>('input[type="file"]');
+      input?.focus({ preventScroll: true });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeView, profileNotice]);
 
   useEffect(() => {
     if (!token || user?.role !== "admin" || activeView !== "adminUsers") {
@@ -1529,13 +2162,25 @@ export const App = () => {
     return () => window.clearTimeout(timeout);
   }, [activeView, jobSearch, token]);
 
-  const fileLabel = useMemo(() => {
-    if (!file) {
-      return "PDF, DOCX, TXT, or MD";
+  useEffect(() => {
+    if (!token || activeView !== "applications") {
+      return;
     }
 
-    return `${file.name} (${Math.ceil(file.size / 1024)} KB)`;
-  }, [file]);
+    const timeout = window.setTimeout(() => {
+      void loadApplicationSearch(token, applicationSearch);
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeView, applicationSearch, token]);
+
+  useEffect(() => {
+    if (!token || user?.role !== "admin" || activeView !== "systemHealth") {
+      return;
+    }
+
+    void loadSystemHealth();
+  }, [activeView, token, user?.role]);
 
   const resumeUploadLabel = useMemo(() => {
     if (!resumeUploadFile) {
@@ -1545,59 +2190,21 @@ export const App = () => {
     return `${resumeUploadFile.name} (${Math.ceil(resumeUploadFile.size / 1024)} KB)`;
   }, [resumeUploadFile]);
 
-  const analyze = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError("");
-    setResult(null);
+  const selectResumeUploadFile = (selectedFile: File | null) => {
+    setResumeUploadFile(selectedFile);
+    const fallback = defaultPrivacyRedactionForm(user);
+    setResumeUploadPrivacy(fallback);
+    setResumeUploadPrivacyStatus("idle");
+    setResumeUploadPrivacyError("");
 
-    if (!file) {
-      setStatus("error");
-      setError("Upload a resume before running the analysis.");
-      return;
-    }
-
-    if (!token || !user) {
-      setStatus("error");
-      setError("Sign in before running an analysis.");
-      return;
-    }
-
-    const payload = new FormData();
-    payload.set("resume", file);
-    if (selectedJobPostingId) {
-      payload.set("jobPostingId", selectedJobPostingId);
-    }
-    payload.set("jobTitle", jobTitle);
-    payload.set("applicationDate", applicationDate);
-    payload.set("jobDescription", jobDescription);
-    payload.set("privacyRedactions", JSON.stringify(serializePrivacyRedactions(analysisPrivacy)));
-
-    setStatus("loading");
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: authHeaders(),
-        body: payload
+    if (selectedFile) {
+      void previewResumePrivacy({
+        resumeFile: selectedFile,
+        fallback,
+        onApply: setResumeUploadPrivacy,
+        onStatus: setResumeUploadPrivacyStatus,
+        onError: setResumeUploadPrivacyError
       });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Analysis failed.");
-      }
-
-      setResult(data);
-      setStatus("success");
-      setAnalysisPrivacy(defaultPrivacyRedactionForm(user));
-      void loadJobs();
-      void loadJobPostings();
-      if (user.role === "admin") {
-        void loadAdminOverview();
-        void loadAdminUsers();
-      }
-      void loadHealth();
-    } catch (caught) {
-      setStatus("error");
-      setError(caught instanceof Error ? caught.message : "Analysis failed.");
     }
   };
 
@@ -1660,6 +2267,13 @@ export const App = () => {
     setRegistrationStatus("loading");
 
     try {
+      if (!registrationPasswordValid) {
+        throw new Error("Password must meet all listed rules.");
+      }
+      if (!registrationPasswordsMatch) {
+        throw new Error("Retyped password must match.");
+      }
+
       const response = await fetch("/api/register", {
         method: "POST",
         headers: {
@@ -1668,7 +2282,8 @@ export const App = () => {
         body: JSON.stringify({
           name: registrationName,
           email: registrationEmail,
-          password: registrationPassword
+          password: registrationPassword,
+          passwordConfirmation: registrationPasswordConfirmation
         })
       });
       const data = await response.json();
@@ -1682,6 +2297,7 @@ export const App = () => {
       setRegisteredUser(registered.user);
       setRegistrationStatus("success");
       setRegistrationPassword("");
+      setRegistrationPasswordConfirmation("");
       await loadJobs(registered.token);
       await loadJobPostings(registered.token);
       await loadProfile(registered.token);
@@ -1692,22 +2308,27 @@ export const App = () => {
   };
 
   const openProfile = async () => {
-    setActiveView("profile");
+    navigateToView("profile");
     await loadProfile();
   };
 
   const openAdminUsers = async () => {
-    setActiveView("adminUsers");
+    navigateToView("adminUsers");
     await loadAdminUsers();
   };
 
   const openJobs = async () => {
-    setActiveView("jobs");
+    navigateToView("jobs");
     await loadJobSearch();
   };
 
+  const openApplications = async () => {
+    navigateToView("applications");
+    await loadApplicationSearch();
+  };
+
   const openSystemHealth = async () => {
-    setActiveView("systemHealth");
+    navigateToView("systemHealth");
     await loadSystemHealth();
   };
 
@@ -1738,7 +2359,6 @@ export const App = () => {
       setUser(updated.user);
       setProfileName(updated.user.name);
       setProfileEmail(updated.user.email);
-      setAnalysisPrivacy(defaultPrivacyRedactionForm(updated.user));
       setResumeUploadPrivacy(defaultPrivacyRedactionForm(updated.user));
       setProfileStatus("success");
     } catch (caught) {
@@ -1779,9 +2399,12 @@ export const App = () => {
       setResumeVersions((current) => [uploaded.resume, ...current]);
       setResumeUploadFile(null);
       setResumeUploadPrivacy(defaultPrivacyRedactionForm(user));
+      setResumeUploadPrivacyStatus("idle");
+      setResumeUploadPrivacyError("");
       setResumeUploadRedactionTotal(uploaded.privacyRedaction.total);
       setResumeUploadInputKey((current) => current + 1);
       setResumeUploadStatus("success");
+      setProfileNotice("");
     } catch (caught) {
       setResumeUploadStatus("error");
       setResumeUploadError(caught instanceof Error ? caught.message : "Resume upload failed.");
@@ -1824,6 +2447,152 @@ export const App = () => {
         setResumeUploadStatus("error");
       }
     }
+  };
+
+  const matchLatestResumeToPosting = async (posting: JobPostingRecord) => {
+    setError("");
+    setResult(null);
+
+    if (!token || !user) {
+      setStatus("error");
+      setError("Sign in before matching a role.");
+      navigateToView("analysis");
+      return;
+    }
+
+    if (!hasProfileResume) {
+      setProfileNotice(`Upload a resume before ${user.role === "admin" ? "analyzing candidates" : `applying to ${posting.title}`}.`);
+      setResumeUploadStatus("idle");
+      setResumeUploadError("");
+      navigateToView("profile");
+      void loadProfile();
+      return;
+    }
+
+    const nextApplicationDate = today();
+    setStatus("loading");
+    navigateToView("analysis");
+
+    try {
+      const response = await fetch("/api/analyze/latest", {
+        method: "POST",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          jobPostingId: posting.id,
+          applicationDate: nextApplicationDate
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Analysis failed.");
+      }
+
+      setResult(data as AnalyzeResponse);
+      setStatus("success");
+      void loadJobs();
+      void loadApplicationSearch();
+      void loadJobPostings();
+      if (user.role === "admin") {
+        void loadAdminOverview();
+        void loadAdminUsers();
+      }
+    } catch (caught) {
+      setStatus("error");
+      setError(caught instanceof Error ? caught.message : "Analysis failed.");
+    }
+  };
+
+  const downloadAssessment = async (job: JobRecord) => {
+    setAdminUsersError("");
+    setProfileError("");
+    setError("");
+
+    try {
+      const response = await fetch(`/api/admin/jobs/${job.id}/assessment.pdf`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Assessment download failed.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromContentDisposition(
+        response.headers.get("content-disposition"),
+        `assessment-${job.id}.pdf`
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Assessment download failed.";
+      if (activeView === "adminUsers") {
+        setAdminUsersError(message);
+        setAdminUsersStatus("error");
+      } else if (activeView === "profile") {
+        setProfileError(message);
+        setProfileStatus("error");
+      } else {
+        setError(message);
+        setStatus("error");
+      }
+    }
+  };
+
+  const replaceJobInState = (updatedJob: JobRecord) => {
+    const replace = (job: JobRecord) => (job.id === updatedJob.id ? updatedJob : job);
+
+    setJobs((current) => current.map(replace));
+    setApplicationSearchResults((current) => current.map(replace));
+    setSelectedPostingApplications((current) => current.map(replace));
+    setAdminOverview((current) => current
+      ? {
+          ...current,
+          jobs: current.jobs.map(replace)
+        }
+      : current);
+    setAdminUsers((current) => current.map((adminUser) => ({
+      ...adminUser,
+      recentApplications: adminUser.recentApplications.map(replace)
+    })));
+    setResult((current) => {
+      if (!current || current.job.id !== updatedJob.id || !updatedJob.analysis) {
+        return current;
+      }
+
+      return {
+        ...current,
+        job: updatedJob,
+        analysis: updatedJob.analysis
+      };
+    });
+  };
+
+  const saveInterviewQuestions = async (job: JobRecord, interviewQuestions: string[]) => {
+    const response = await fetch(`/api/admin/jobs/${job.id}/interview-questions`, {
+      method: "PATCH",
+      headers: {
+        ...authHeaders(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ interviewQuestions })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Interview question update failed.");
+    }
+
+    replaceJobInState((data as { job: JobRecord }).job);
   };
 
   const addPostingSkill = () => {
@@ -1870,7 +2639,6 @@ export const App = () => {
       if (!jobSearch.trim()) {
         setJobSearchResults((current) => [created.jobPosting, ...current]);
       }
-      setSelectedJobPostingId(String(created.jobPosting.id));
       setNewPostingTitle("");
       setNewPostingDescription("");
       setNewPostingSkills([]);
@@ -1888,11 +2656,14 @@ export const App = () => {
       ? jobPostings.find((posting) => posting.id === job.jobPostingId && posting.status === "active")
       : undefined;
 
-    setJobTitle(job.jobTitle);
-    setApplicationDate(job.applicationDate);
-    setJobDescription(job.jobDescription ?? "");
-    setSelectedJobPostingId(activePosting ? String(activePosting.id) : "");
-    setActiveView("dashboard");
+    if (activePosting) {
+      void matchLatestResumeToPosting(activePosting);
+      return;
+    }
+
+    setJobSearch(job.jobTitle);
+    navigateToView("jobs");
+    void loadJobSearch(token, job.jobTitle);
   };
 
   if (!user) {
@@ -1907,16 +2678,6 @@ export const App = () => {
               <h1>Resume Analyzer</h1>
               <p>Role-fit intelligence with versioned resumes and application history.</p>
             </div>
-          </div>
-          <div className="system-strip">
-            <StatusBadge tone={health?.storage?.postgres.ok ? "success" : "warning"}>
-              <Server size={14} />
-              {health?.storage?.postgres.ok ? "pgvector ready" : "Postgres offline"}
-            </StatusBadge>
-            <StatusBadge>
-              <Activity size={14} />
-              {health?.models.embedding ?? "Embeddings"}
-            </StatusBadge>
           </div>
         </header>
 
@@ -2014,17 +2775,63 @@ export const App = () => {
 
                 <label className="field">
                   <span>Password</span>
-                  <div className="input-with-icon">
+                  <div className="input-with-icon has-action">
                     <LockKeyhole size={18} />
                     <input
                       autoComplete="new-password"
-                      type="password"
+                      type={showRegistrationPassword ? "text" : "password"}
                       value={registrationPassword}
                       onChange={(event) => setRegistrationPassword(event.target.value)}
                       placeholder="12+ chars, mixed case, number"
                     />
+                    <button
+                      aria-label={showRegistrationPassword ? "Hide password" : "Show password"}
+                      className="input-icon-button"
+                      type="button"
+                      onClick={() => setShowRegistrationPassword((current) => !current)}
+                    >
+                      {showRegistrationPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
                   </div>
                 </label>
+
+                <label className="field">
+                  <span>Retype password</span>
+                  <div className="input-with-icon has-action">
+                    <LockKeyhole size={18} />
+                    <input
+                      autoComplete="new-password"
+                      type={showRegistrationPasswordConfirmation ? "text" : "password"}
+                      value={registrationPasswordConfirmation}
+                      onChange={(event) => setRegistrationPasswordConfirmation(event.target.value)}
+                      placeholder="Retype account password"
+                    />
+                    <button
+                      aria-label={showRegistrationPasswordConfirmation ? "Hide retyped password" : "Show retyped password"}
+                      className="input-icon-button"
+                      type="button"
+                      onClick={() => setShowRegistrationPasswordConfirmation((current) => !current)}
+                    >
+                      {showRegistrationPasswordConfirmation ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                </label>
+
+                <div className="password-rules" aria-live="polite">
+                  {Object.entries(passwordRuleLabels).map(([rule, label]) => {
+                    const satisfied = registrationPasswordChecks[rule as keyof typeof registrationPasswordChecks];
+                    return (
+                      <span className={satisfied ? "satisfied" : ""} key={rule}>
+                        {satisfied ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                        {label}
+                      </span>
+                    );
+                  })}
+                  <span className={registrationPasswordsMatch ? "satisfied" : ""}>
+                    {registrationPasswordsMatch ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                    Passwords match
+                  </span>
+                </div>
 
                 <button className="primary-button" disabled={registrationStatus === "loading"} type="submit">
                   {registrationStatus === "loading" ? <Loader2 className="spin" size={18} /> : <UserPlus size={18} />}
@@ -2047,19 +2854,6 @@ export const App = () => {
               </div>
             )}
           </section>
-
-          <section className="auth-context">
-            <div className="empty-mark">
-              <Archive size={34} />
-            </div>
-            <h2>Version resumes before applications</h2>
-            <p>Profiles keep every uploaded resume as its own version, so updates never overwrite prior history.</p>
-            <div className="empty-grid">
-              <MetricTile icon={<FileText size={17} />} label="Resumes" value="Versioned" caption="append-only uploads" />
-              <MetricTile icon={<BriefcaseBusiness size={17} />} label="Applications" value="Scoped" caption="visible by account" />
-              <MetricTile icon={<ShieldCheck size={17} />} label="Admins" value="Global" caption="users and jobs" />
-            </div>
-          </section>
         </section>
       </main>
     );
@@ -2078,301 +2872,76 @@ export const App = () => {
           </div>
         </div>
         <div className="system-strip">
-          <button className="nav-button" type="button" onClick={() => setActiveView("dashboard")}>
-            <ClipboardList size={16} />
-            Dashboard
+          <button className={`nav-button${activeView === "applications" ? " active" : ""}`} type="button" onClick={openApplications}>
+            <Database size={16} />
+            Applications
           </button>
-          <button className="nav-button" type="button" onClick={openJobs}>
+          <button className={`nav-button${activeView === "jobs" ? " active" : ""}`} type="button" onClick={openJobs}>
             <SearchCheck size={16} />
             Jobs
           </button>
           {user.role === "admin" && (
             <>
-              <button className="nav-button" type="button" onClick={openAdminUsers}>
+              <button className={`nav-button${activeView === "adminUsers" ? " active" : ""}`} type="button" onClick={openAdminUsers}>
                 <UsersRound size={16} />
                 Users
               </button>
-              <button className="nav-button" type="button" onClick={openSystemHealth}>
+              <button className={`nav-button${activeView === "systemHealth" ? " active" : ""}`} type="button" onClick={openSystemHealth}>
                 <Server size={16} />
                 Health
               </button>
-              <button className="nav-button primary-nav" type="button" onClick={() => setActiveView("adminJobs")}>
+              <button className={`nav-button primary-nav${activeView === "adminJobs" ? " active" : ""}`} type="button" onClick={() => navigateToView("adminJobs")}>
                 <BriefcaseBusiness size={16} />
                 Add jobs
               </button>
             </>
           )}
-          <button className="nav-button" type="button" onClick={openProfile}>
+          <button className={`nav-button${activeView === "profile" ? " active" : ""}`} type="button" onClick={openProfile}>
             <UserRound size={16} />
             Profile
+          </button>
+          <button className="nav-button" type="button" onClick={logout}>
+            <LogOut size={16} />
+            Sign out
           </button>
         </div>
       </header>
 
       <section className="workspace">
-        <aside className="input-column">
-          <section className="account-panel">
-            <div className="section-kicker">
-              <span>Account</span>
-              <StatusBadge tone={user ? "success" : "neutral"}>
-                {user ? user.role : authMode}
-              </StatusBadge>
-            </div>
-
-            {user ? (
-              <div className="signed-in-card">
-                <div>
-                  <strong>{user.name}</strong>
-                  <span>{user.email}</span>
-                </div>
-                <button className="secondary-button" type="button" onClick={openProfile}>
-                  <UserRound size={18} />
-                  Profile
-                </button>
-                <button className="secondary-button" type="button" onClick={logout}>
-                  <LogOut size={18} />
-                  Sign out
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="segmented-control">
-                  <button
-                    className={authMode === "login" ? "active" : ""}
-                    type="button"
-                    onClick={() => setAuthMode("login")}
-                  >
-                    <LogIn size={16} />
-                    Login
-                  </button>
-                  <button
-                    className={authMode === "register" ? "active" : ""}
-                    type="button"
-                    onClick={() => setAuthMode("register")}
-                  >
-                    <UserPlus size={16} />
-                    Register
-                  </button>
-                </div>
-
-                {authMode === "login" ? (
-                  <form className="form-stack compact" onSubmit={login}>
-                    <label className="field">
-                      <span>Email</span>
-                      <div className="input-with-icon">
-                        <Mail size={18} />
-                        <input
-                          autoComplete="email"
-                          inputMode="email"
-                          type="email"
-                          value={loginEmail}
-                          onChange={(event) => setLoginEmail(event.target.value)}
-                          placeholder="admin@example.com"
-                        />
-                      </div>
-                    </label>
-
-                    <label className="field">
-                      <span>Password</span>
-                      <div className="input-with-icon">
-                        <LockKeyhole size={18} />
-                        <input
-                          autoComplete="current-password"
-                          type="password"
-                          value={loginPassword}
-                          onChange={(event) => setLoginPassword(event.target.value)}
-                          placeholder="Account password"
-                        />
-                      </div>
-                    </label>
-
-                    <button className="secondary-button" disabled={loginStatus === "loading"} type="submit">
-                      {loginStatus === "loading" ? <Loader2 className="spin" size={18} /> : <LogIn size={18} />}
-                      Sign in
-                    </button>
-                  </form>
-                ) : (
-                  <form className="form-stack compact" onSubmit={register}>
-                    <label className="field">
-                      <span>Name</span>
-                      <div className="input-with-icon">
-                        <UserRound size={18} />
-                        <input
-                          autoComplete="name"
-                          value={registrationName}
-                          onChange={(event) => setRegistrationName(event.target.value)}
-                          placeholder="Jane Doe"
-                        />
-                      </div>
-                    </label>
-
-                    <label className="field">
-                      <span>Email</span>
-                      <div className="input-with-icon">
-                        <Mail size={18} />
-                        <input
-                          autoComplete="email"
-                          inputMode="email"
-                          type="email"
-                          value={registrationEmail}
-                          onChange={(event) => setRegistrationEmail(event.target.value)}
-                          placeholder="jane@example.com"
-                        />
-                      </div>
-                    </label>
-
-                    <label className="field">
-                      <span>Password</span>
-                      <div className="input-with-icon">
-                        <LockKeyhole size={18} />
-                        <input
-                          autoComplete="new-password"
-                          type="password"
-                          value={registrationPassword}
-                          onChange={(event) => setRegistrationPassword(event.target.value)}
-                          placeholder="12+ chars, mixed case, number"
-                        />
-                      </div>
-                    </label>
-
-                    <button className="secondary-button" disabled={registrationStatus === "loading"} type="submit">
-                      {registrationStatus === "loading" ? <Loader2 className="spin" size={18} /> : <UserPlus size={18} />}
-                      Create account
-                    </button>
-                  </form>
-                )}
-
-                {registrationStatus === "success" && registeredUser && (
-                  <div className="notice success">
-                    <CheckCircle2 size={18} />
-                    <span>{registeredUser.email} saved.</span>
-                  </div>
-                )}
-
-                {registrationStatus === "error" && (
-                  <div className="notice error">
-                    <AlertCircle size={18} />
-                    <span>{registrationError}</span>
-                  </div>
-                )}
-
-                {loginStatus === "error" && (
-                  <div className="notice error">
-                    <AlertCircle size={18} />
-                    <span>{loginError}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </section>
-
-          <div className="section-kicker">
-            <span>New analysis</span>
-            <StatusBadge tone={!user ? "warning" : status === "loading" ? "warning" : "neutral"}>
-              {!user ? "Login required" : status === "loading" ? "Running" : "Ready"}
-            </StatusBadge>
-          </div>
-
-          <form className="form-stack" onSubmit={analyze}>
-            <label className="upload-zone">
-              <div className="upload-icon">
-                <Upload size={22} />
-              </div>
-              <span>{fileLabel}</span>
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-
-            {file && <PrivacyReviewFields value={analysisPrivacy} onChange={setAnalysisPrivacy} />}
-
-            <label className="field">
-              <span>Job posting</span>
-              <select
-                value={selectedJobPostingId}
-                onChange={(event) => setSelectedJobPostingId(event.target.value)}
-              >
-                <option value="">Custom job profile</option>
-                {jobPostings
-                  .filter((posting) => posting.status === "active")
-                  .map((posting) => (
-                    <option key={posting.id} value={posting.id}>
-                      {posting.title}
-                    </option>
-                  ))}
-              </select>
-            </label>
-
-            <label className="field">
-              <span>Job title</span>
-              <input
-                value={jobTitle}
-                onChange={(event) => setJobTitle(event.target.value)}
-                placeholder="Product Manager, Data Analyst, Staff Engineer..."
-              />
-            </label>
-
-            <label className="field">
-              <span>Application date</span>
-              <div className="input-with-icon">
-                <CalendarDays size={18} />
-                <input
-                  value={applicationDate}
-                  onChange={(event) => setApplicationDate(event.target.value)}
-                  type="date"
-                />
-              </div>
-            </label>
-
-            <label className="field">
-              <span>Job description</span>
-              <textarea
-                value={jobDescription}
-                onChange={(event) => setJobDescription(event.target.value)}
-                placeholder="Paste a job description for a more targeted review."
-              />
-            </label>
-
-            <button className="primary-button" disabled={status === "loading" || !user} type="submit">
-              {status === "loading" ? <Loader2 className="spin" size={18} /> : <Target size={18} />}
-              Analyze resume
-            </button>
-          </form>
-
-          {user?.role === "admin" && (
-            <button className="primary-button sidebar-cta" type="button" onClick={() => setActiveView("adminJobs")}>
-              <BriefcaseBusiness size={18} />
-              Add or manage job postings
-            </button>
-          )}
-
-          {status === "error" && (
-            <div className="notice error">
-              <AlertCircle size={18} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <JobHistory jobs={jobs} isAdmin={user?.role === "admin"} />
-        </aside>
-
         <section className="results-column">
+          {activeView === "applications" && (
+            <ApplicationSearchPanel
+              jobs={applicationSearchResults}
+              search={applicationSearch}
+              status={applicationSearchStatus}
+              error={applicationSearchError}
+              isAdmin={user.role === "admin"}
+              onSearchChange={setApplicationSearch}
+              onRefresh={() => void loadApplicationSearch()}
+              onUseJob={useJobForNewAnalysis}
+              onDownloadAssessment={(job) => void downloadAssessment(job)}
+              onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
+            />
+          )}
+
           {activeView === "jobs" && (
             <JobSearchPanel
               postings={jobSearchResults}
               search={jobSearch}
               status={jobSearchStatus}
               error={jobSearchError}
+              selectedPostingId={selectedPostingApplicationsId}
+              selectedPostingApplications={selectedPostingApplications}
+              selectedPostingApplicationsStatus={selectedPostingApplicationsStatus}
+              selectedPostingApplicationsError={selectedPostingApplicationsError}
               onSearchChange={setJobSearch}
               onRefresh={() => void loadJobSearch()}
-              onUsePosting={(posting) => {
-                setSelectedJobPostingId(String(posting.id));
-                setJobTitle(posting.title);
-                setJobDescription(posting.description);
-                setActiveView("dashboard");
-              }}
+              onUsePosting={(posting) => void matchLatestResumeToPosting(posting)}
+              onViewApplications={user.role === "admin" ? (posting) => void loadPostingApplications(posting) : undefined}
+              onDownloadAssessment={(job) => void downloadAssessment(job)}
+              onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
+              isAdmin={user.role === "admin"}
+              hasResume={hasProfileResume}
             />
           )}
 
@@ -2385,6 +2954,8 @@ export const App = () => {
               onSearchChange={setAdminUsersSearch}
               onRefresh={() => void loadAdminUsers()}
               onDownloadResume={(resume) => void downloadResume(resume)}
+              onDownloadAssessment={(job) => void downloadAssessment(job)}
+              onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
             />
           )}
 
@@ -2416,7 +2987,7 @@ export const App = () => {
                     <input
                       value={newPostingTitle}
                       onChange={(event) => setNewPostingTitle(event.target.value)}
-                      placeholder="Backend Platform Engineer"
+                    placeholder="Veterinary Receptionist"
                     />
                   </label>
 
@@ -2521,13 +3092,10 @@ export const App = () => {
                           <button
                             className="secondary-button"
                             type="button"
-                            onClick={() => {
-                              setSelectedJobPostingId(String(posting.id));
-                              setActiveView("dashboard");
-                            }}
+                            onClick={() => void matchLatestResumeToPosting(posting)}
                           >
                             <Target size={16} />
-                            Match resume
+                            Analyze candidate
                           </button>
                         </div>
                       </article>
@@ -2588,7 +3156,13 @@ export const App = () => {
                   <Archive size={19} />
                   <h2>Resume Versions</h2>
                 </div>
-                <form className="form-stack profile-form" onSubmit={uploadResumeVersion}>
+                {profileNotice && (
+                  <div className="notice warning">
+                    <AlertCircle size={18} />
+                    <span>{profileNotice}</span>
+                  </div>
+                )}
+                <form className="form-stack profile-form" ref={resumeUploadFormRef} onSubmit={uploadResumeVersion}>
                   <label className="upload-zone">
                     <div className="upload-icon">
                       <Upload size={22} />
@@ -2598,11 +3172,16 @@ export const App = () => {
                       key={resumeUploadInputKey}
                       type="file"
                       accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-                      onChange={(event) => setResumeUploadFile(event.target.files?.[0] ?? null)}
+                      onChange={(event) => selectResumeUploadFile(event.target.files?.[0] ?? null)}
                     />
                   </label>
                   {resumeUploadFile && (
-                    <PrivacyReviewFields value={resumeUploadPrivacy} onChange={setResumeUploadPrivacy} />
+                    <PrivacyReviewFields
+                      value={resumeUploadPrivacy}
+                      onChange={setResumeUploadPrivacy}
+                      status={resumeUploadPrivacyStatus}
+                      error={resumeUploadPrivacyError}
+                    />
                   )}
                   <button className="secondary-button" disabled={resumeUploadStatus === "loading"} type="submit">
                     {resumeUploadStatus === "loading" ? <Loader2 className="spin" size={18} /> : <Upload size={18} />}
@@ -2659,49 +3238,13 @@ export const App = () => {
                 jobs={jobs}
                 isAdmin={user.role === "admin"}
                 onUseJob={useJobForNewAnalysis}
+                onDownloadAssessment={(job) => void downloadAssessment(job)}
+                onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
               />
             </div>
           )}
 
-          {activeView === "dashboard" && user?.role === "admin" && adminOverview && !result && status !== "loading" && (
-            <AdminOverview overview={adminOverview} />
-          )}
-
-          {activeView === "dashboard" && !result && status !== "loading" && !(user?.role === "admin" && adminOverview) && (
-            <div className="empty-state">
-              <div className="empty-mark">
-                <SearchCheck size={34} />
-              </div>
-              <h2>{user ? "Ready for the next application" : "Sign in to review applications"}</h2>
-              <p>
-                {user
-                  ? "Upload a resume and job context to generate a stored recommendation."
-                  : "User accounts can review their resumes, applied jobs, and LLM match analysis."}
-              </p>
-              <div className="empty-grid">
-                <MetricTile
-                  icon={<Archive size={17} />}
-                  label="Jobs"
-                  value={`${jobs.length}`}
-                  caption={user?.role === "admin" ? "all records" : "my records"}
-                />
-                <MetricTile
-                  icon={<Server size={17} />}
-                  label="Vectors"
-                  value={health?.storage?.postgres.ok ? "Online" : "Offline"}
-                  caption={health?.storage?.postgres.extension ?? "pgvector"}
-                />
-                <MetricTile
-                  icon={<Layers3 size={17} />}
-                  label="Model"
-                  value="Local"
-                  caption={health?.models.embedding ?? "embedding model"}
-                />
-              </div>
-            </div>
-          )}
-
-          {activeView === "dashboard" && status === "loading" && (
+          {activeView === "analysis" && status === "loading" && (
             <div className="empty-state">
               <div className="empty-mark">
                 <Loader2 className="spin" size={34} />
@@ -2711,7 +3254,17 @@ export const App = () => {
             </div>
           )}
 
-          {activeView === "dashboard" && result && (
+          {activeView === "analysis" && status === "error" && (
+            <div className="empty-state">
+              <div className="empty-mark">
+                <AlertCircle size={34} />
+              </div>
+              <h2>Analysis did not complete</h2>
+              <p>{error || "Review the resume and job details, then try again."}</p>
+            </div>
+          )}
+
+          {activeView === "analysis" && result && (
             <div className="analysis-grid">
               <section className="score-panel">
                 <div>
@@ -2726,6 +3279,16 @@ export const App = () => {
                     {redactionTotalLabel(result.privacyRedaction.total)} |{" "}
                     {result.models.embedding}
                   </span>
+                  {user.role === "admin" && (
+                    <button
+                      className="secondary-button compact-action assessment-download"
+                      type="button"
+                      onClick={() => void downloadAssessment(result.job)}
+                    >
+                      <Download size={16} />
+                      Download assessment
+                    </button>
+                  )}
                 </div>
               </section>
 
@@ -2776,11 +3339,12 @@ export const App = () => {
                 items={result.analysis.suggestedKeywords}
                 icon={<BriefcaseBusiness size={19} />}
               />
-              <ListBlock
-                title="Interview Questions"
-                items={result.analysis.interviewQuestions}
-                icon={<FileText size={19} />}
-              />
+              {user.role === "admin" && (
+                <InterviewQuestionsEditor
+                  questions={result.analysis.interviewQuestions}
+                  onSave={(questions) => saveInterviewQuestions(result.job, questions)}
+                />
+              )}
 
               <section className="surface-card full recommendation-panel">
                 <div className="panel-heading">

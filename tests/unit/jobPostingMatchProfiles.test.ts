@@ -42,7 +42,7 @@ describe("jobPostingMatchProfiles", () => {
 
   it("refreshes a job posting semantic match profile", async () => {
     queryPostgres.mockResolvedValueOnce({
-      rows: [{ profile_text: "Role: Platform Engineer\nSkills: PostgreSQL, Kubernetes" }]
+      rows: [{ profile_text: "Role: Veterinary Receptionist\nSkills: client intake, phone triage" }]
     });
     createEmbeddings.mockResolvedValueOnce([[0.1, 0.2, 0.3]]);
     queryPostgres.mockResolvedValueOnce({ rows: [] });
@@ -51,11 +51,11 @@ describe("jobPostingMatchProfiles", () => {
 
     expect(queryPostgres).toHaveBeenNthCalledWith(1, "jobPostingMatchProfiles.source", [4]);
     expect(createEmbeddings).toHaveBeenCalledWith([
-      "Role: Platform Engineer\nSkills: PostgreSQL, Kubernetes"
+      "Role: Veterinary Receptionist\nSkills: client intake, phone triage"
     ]);
     expect(queryPostgres).toHaveBeenNthCalledWith(2, "jobPostingMatchProfiles.upsert", [
       4,
-      "Role: Platform Engineer\nSkills: PostgreSQL, Kubernetes",
+      "Role: Veterinary Receptionist\nSkills: client intake, phone triage",
       "[0.1,0.2,0.3]",
       "text-embedding-nomic-embed-text-v1.5-embedding"
     ]);
@@ -79,11 +79,11 @@ describe("jobPostingMatchProfiles", () => {
       ]
     });
 
-    await expect(matchJobPostingsBySemanticQuery(" financial controls analyst ", 25)).resolves.toEqual([
+    await expect(matchJobPostingsBySemanticQuery(" urgent visit coordination ", 25)).resolves.toEqual([
       { jobPostingId: 8, score: 0.92 },
       { jobPostingId: 4, score: 0.81 }
     ]);
-    expect(createEmbeddings).toHaveBeenCalledWith(["financial controls analyst"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(["urgent visit coordination"]);
     expect(queryPostgres).toHaveBeenCalledWith("jobPostingMatchProfiles.match", [
       "[0.4,0.5]",
       "text-embedding-nomic-embed-text-v1.5-embedding",

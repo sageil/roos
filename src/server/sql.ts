@@ -22,8 +22,11 @@ export const queries = {
     fail: loadSql("jobs", "fail.sql"),
     list: loadSql("jobs", "list.sql"),
     listAll: loadSql("jobs", "list_all.sql"),
+    listForPosting: loadSql("jobs", "list_for_posting.sql"),
     listForUser: loadSql("jobs", "list_for_user.sql"),
-    get: loadSql("jobs", "get.sql")
+    get: loadSql("jobs", "get.sql"),
+    search: loadSql("jobs", "search.sql"),
+    updateInterviewQuestions: loadSql("jobs", "update_interview_questions.sql")
   },
   jobPostings: {
     create: loadSql("job_postings", "create.sql"),
@@ -46,6 +49,7 @@ export const queries = {
   resumeVersions: {
     create: loadSql("resume_versions", "create.sql"),
     download: loadSql("resume_versions", "download.sql"),
+    latestForUser: loadSql("resume_versions", "latest_for_user.sql"),
     listForUser: loadSql("resume_versions", "list_for_user.sql")
   },
   sessions: {
@@ -63,7 +67,8 @@ export const queries = {
   },
   resumeChunks: {
     upsert: loadSql("resume_chunks", "upsert.sql"),
-    match: loadSql("resume_chunks", "match.sql")
+    match: loadSql("resume_chunks", "match.sql"),
+    matchJobs: loadSql("resume_chunks", "match_jobs.sql")
   },
   userMatchProfiles: {
     source: loadSql("user_match_profiles", "source.sql"),

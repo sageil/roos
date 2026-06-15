@@ -2,15 +2,30 @@ import { config } from "./config.js";
 import { createEmbeddingClient } from "./openaiClients.js";
 
 export const cosineSimilarity = (left: number[], right: number[]): number => {
-  const length = Math.min(left.length, right.length);
+  if (
+    left.length === 0 ||
+    right.length === 0 ||
+    !left.every(Number.isFinite) ||
+    !right.every(Number.isFinite)
+  ) {
+    return 0;
+  }
+
+  const sharedLength = Math.min(left.length, right.length);
   let dot = 0;
   let leftMagnitude = 0;
   let rightMagnitude = 0;
 
-  for (let index = 0; index < length; index += 1) {
+  for (let index = 0; index < sharedLength; index += 1) {
     dot += left[index] * right[index];
-    leftMagnitude += left[index] * left[index];
-    rightMagnitude += right[index] * right[index];
+  }
+
+  for (const value of left) {
+    leftMagnitude += value * value;
+  }
+
+  for (const value of right) {
+    rightMagnitude += value * value;
   }
 
   if (leftMagnitude === 0 || rightMagnitude === 0) {

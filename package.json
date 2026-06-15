@@ -17,7 +17,7 @@
     "db:test:clean": "./scripts/cleanup-test-data.sh",
     "db:seed:demo": "docker compose up -d postgres && docker compose --profile test run --rm --remove-orphans unit-tests pnpm tsx scripts/seed-demo-data.ts",
     "e2e": "playwright test",
-    "e2e:docker": "docker compose up --build --remove-orphans -d nginx && docker compose --profile test run --rm playwright",
+    "e2e:docker": "docker compose up --build --remove-orphans -d nginx && docker compose --profile test run --rm --remove-orphans unit-tests pnpm tsx scripts/seed-demo-data.ts && docker compose --profile test run --rm playwright",
     "test:unit": "vitest run",
     "test:unit:docker": "docker compose --profile test run --rm --remove-orphans unit-tests pnpm test:unit",
     "coverage": "vitest run --coverage",

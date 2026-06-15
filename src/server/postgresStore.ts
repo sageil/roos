@@ -3,6 +3,7 @@ import type { TextChunk } from "./chunking.js";
 import { config } from "./config.js";
 import { checkPostgres, connectPostgres, queryPostgres, withPostgres } from "./database.js";
 import { queries } from "./sql.js";
+import { toPgVectorLiteral } from "./vector.js";
 
 export { checkPostgres };
 
@@ -25,7 +26,7 @@ type JobRow = {
   llm_recommendation: string | null;
   fit_score: number | null;
   fit_level: "low" | "medium" | "high" | null;
-  analysis_json: string | null;
+  analysis_json: ResumeAnalysis | string | null;
   error_message: string | null;
   llm_model: string | null;
   embedding_model: string | null;
@@ -36,6 +37,11 @@ type JobRow = {
 type EvidenceRow = {
   chunk_id: number;
   document: string;
+  score: number | string | null;
+};
+
+type JobMatchRow = {
+  job_id: number;
   score: number;
 };
 
@@ -45,7 +51,7 @@ type AnalysisCacheRow = {
   job_profile_hash: string;
   llm_model: string;
   embedding_model: string;
-  analysis_json: string;
+  analysis_json: ResumeAnalysis | string;
   chunk_count: number;
   created_at: string;
   updated_at: string;
@@ -63,11 +69,13 @@ export type CachedAnalysis = {
   updatedAt: string;
 };
 
-const vectorLiteral = (embedding: number[]) => `[${embedding.join(",")}]`;
-
-const parseAnalysis = (analysisJson: string | null): ResumeAnalysis | undefined => {
+const parseAnalysis = (analysisJson: ResumeAnalysis | string | null): ResumeAnalysis | undefined => {
   if (!analysisJson) {
     return undefined;
+  }
+
+  if (typeof analysisJson !== "string") {
+    return analysisJson;
   }
 
   try {
@@ -119,6 +127,11 @@ const mapAnalysisCacheRow = (row: AnalysisCacheRow): CachedAnalysis | undefined 
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+};
+
+const normalizeMatchScore = (score: number | string | null): number => {
+  const numericScore = typeof score === "number" ? score : Number(score);
+  return Number.isFinite(numericScore) ? Number(numericScore.toFixed(4)) : 0;
 };
 
 export const createJob = async ({
@@ -193,6 +206,20 @@ export const failJob = async (id: number, message: string) =>
     await queryPostgres(queries.jobs.fail, [message, id]);
   });
 
+export const updateJobInterviewQuestions = async ({
+  id,
+  interviewQuestions
+}: {
+  id: number;
+  interviewQuestions: string[];
+}) =>
+  withPostgres(async () => {
+    await queryPostgres(
+      queries.jobs.updateInterviewQuestions,
+      [id, JSON.stringify(interviewQuestions)]
+    );
+  });
+
 export const listJobs = async ({
   userId,
   role,
@@ -206,6 +233,43 @@ export const listJobs = async ({
     const result = role === "admin"
       ? await queryPostgres<JobRow>(queries.jobs.listAll, [limit])
       : await queryPostgres<JobRow>(queries.jobs.listForUser, [userId, limit]);
+
+    return result.rows.map(mapRow);
+  });
+
+export const listJobsForPosting = async ({
+  jobPostingId,
+  limit = 100
+}: {
+  jobPostingId: number;
+  limit?: number;
+}): Promise<JobRecord[]> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<JobRow>(queries.jobs.listForPosting, [jobPostingId, limit]);
+    return result.rows.map(mapRow);
+  });
+
+export const searchJobs = async ({
+  userId,
+  role,
+  search = "",
+  semanticJobIds = [],
+  limit = 100
+}: {
+  userId: number;
+  role: "user" | "admin";
+  search?: string;
+  semanticJobIds?: number[];
+  limit?: number;
+}): Promise<JobRecord[]> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<JobRow>(queries.jobs.search, [
+      role,
+      userId,
+      search.trim(),
+      semanticJobIds,
+      limit
+    ]);
 
     return result.rows.map(mapRow);
   });
@@ -252,7 +316,7 @@ export const storeResumeChunks = async ({
             jobId,
             chunk.id,
             chunk.text,
-            vectorLiteral(embeddings[index]),
+            toPgVectorLiteral(embeddings[index]),
             applicationDate,
             jobTitle,
             config.embeddingModel
@@ -280,13 +344,36 @@ export const queryJobEvidence = async ({
   withPostgres(async () => {
     const result = await queryPostgres<EvidenceRow>(
       queries.resumeChunks.match,
-      [jobId, vectorLiteral(queryEmbedding), nResults]
+      [jobId, toPgVectorLiteral(queryEmbedding), nResults]
     );
 
     return result.rows.map((row) => ({
       id: row.chunk_id,
       text: row.document,
-      score: Number(row.score.toFixed(4))
+      score: normalizeMatchScore(row.score)
+    }));
+  });
+
+export const queryMatchingJobIds = async ({
+  queryEmbedding,
+  userId,
+  role,
+  nResults
+}: {
+  queryEmbedding: number[];
+  userId: number;
+  role: "user" | "admin";
+  nResults: number;
+}): Promise<{ jobId: number; score: number }[]> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<JobMatchRow>(
+      queries.resumeChunks.matchJobs,
+      [toPgVectorLiteral(queryEmbedding), config.embeddingModel, role, userId, nResults]
+    );
+
+    return result.rows.map((row) => ({
+      jobId: row.job_id,
+      score: row.score
     }));
   });
 

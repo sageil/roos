@@ -13,6 +13,7 @@ vi.mock("../../src/server/sql.js", () => ({
     resumeVersions: {
       create: "resumeVersions.create",
       download: "resumeVersions.download",
+      latestForUser: "resumeVersions.latestForUser",
       listForUser: "resumeVersions.listForUser"
     }
   }
@@ -20,6 +21,7 @@ vi.mock("../../src/server/sql.js", () => ({
 
 import {
   createResumeVersion,
+  getLatestResumeVersion,
   getResumeVersionDownload,
   listResumeVersions
 } from "../../src/server/resumeVersionStore.js";
@@ -118,6 +120,30 @@ describe("resumeVersionStore", () => {
       }
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("resumeVersions.listForUser", [7]);
+  });
+
+  it("loads the latest stored resume text for matching", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [
+        {
+          ...resumeVersionRow,
+          resume_text: "Stored redacted resume text"
+        }
+      ]
+    });
+
+    await expect(getLatestResumeVersion(7)).resolves.toEqual({
+      id: 3,
+      userId: 7,
+      versionNumber: 2,
+      fileName: "resume.pdf",
+      contentType: "application/pdf",
+      fileSize: 1024,
+      characterCount: 4200,
+      createdAt: "2026-06-14T12:00:00.000Z",
+      resumeText: "Stored redacted resume text"
+    });
+    expect(queryPostgres).toHaveBeenCalledWith("resumeVersions.latestForUser", [7]);
   });
 
   it("loads downloadable resume bytes for authorized users", async () => {

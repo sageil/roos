@@ -27,9 +27,9 @@ import {
 const jobPostingRow = {
   id: 4,
   created_by_user_id: 1,
-  title: "Platform Staff Engineer",
-  description: "Build APIs and mentor teams.",
-  skills: ["TypeScript", "PostgreSQL"],
+  title: "Veterinary Receptionist",
+  description: "Manage appointments, client intake, and phone triage.",
+  skills: ["client intake", "phone triage"],
   status: "active" as const,
   created_at: "2026-06-14T10:00:00.000Z",
   updated_at: "2026-06-14T10:00:00.000Z",
@@ -49,22 +49,22 @@ describe("jobPostingStore", () => {
     await expect(
       createJobPosting({
         createdByUserId: 1,
-      title: "Platform Staff Engineer",
-      description: "Build APIs and mentor teams.",
-      skills: ["TypeScript", "PostgreSQL"]
+      title: "Veterinary Receptionist",
+      description: "Manage appointments, client intake, and phone triage.",
+      skills: ["client intake", "phone triage"]
     })
     ).resolves.toMatchObject({
       id: 4,
       createdByUserId: 1,
-      title: "Platform Staff Engineer",
-      skills: ["TypeScript", "PostgreSQL"],
+      title: "Veterinary Receptionist",
+      skills: ["client intake", "phone triage"],
       status: "active"
     });
     expect(queryPostgres).toHaveBeenCalledWith("jobPostings.create", [
       1,
-      "Platform Staff Engineer",
-      "Build APIs and mentor teams.",
-      ["TypeScript", "PostgreSQL"]
+      "Veterinary Receptionist",
+      "Manage appointments, client intake, and phone triage.",
+      ["client intake", "phone triage"]
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("jobPostingStore", () => {
     await expect(
       listJobPostings({
         includeArchived: true,
-        search: " platform ",
+        search: " client intake ",
         semanticJobPostingIds: [4, 8],
         limit: 25
       })
@@ -82,9 +82,9 @@ describe("jobPostingStore", () => {
       {
         id: 4,
         createdByUserId: 1,
-        title: "Platform Staff Engineer",
-        description: "Build APIs and mentor teams.",
-        skills: ["TypeScript", "PostgreSQL"],
+        title: "Veterinary Receptionist",
+        description: "Manage appointments, client intake, and phone triage.",
+        skills: ["client intake", "phone triage"],
         status: "active",
         createdAt: "2026-06-14T10:00:00.000Z",
         updatedAt: "2026-06-14T10:00:00.000Z",
@@ -95,7 +95,7 @@ describe("jobPostingStore", () => {
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("jobPostings.list", [
       true,
-      "platform",
+      "client intake",
       [4, 8],
       25
     ]);
@@ -107,7 +107,7 @@ describe("jobPostingStore", () => {
 
     await expect(getActiveJobPosting(4)).resolves.toMatchObject({
       id: 4,
-      title: "Platform Staff Engineer"
+      title: "Veterinary Receptionist"
     });
     await expect(getActiveJobPosting(5)).resolves.toBeUndefined();
     expect(queryPostgres).toHaveBeenNthCalledWith(1, "jobPostings.getActive", [4]);

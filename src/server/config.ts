@@ -22,7 +22,7 @@ export const config = {
   embeddingApiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY,
   embeddingBaseUrl: process.env.EMBEDDING_BASE_URL || process.env.OPENAI_BASE_URL || undefined,
   embeddingModel: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
-  embeddingDimensions: optionalNumber(process.env.EMBEDDING_DIMENSIONS),
+  embeddingDimensions: optionalNumber(process.env.EMBEDDING_DIMENSIONS) ?? 768,
   appInstanceName: process.env.APP_INSTANCE_NAME || process.env.HOSTNAME || "local",
   appInstanceUrls: process.env.APP_INSTANCE_URLS || "",
   maxUploadBytes: 8 * 1024 * 1024,
