@@ -52,3 +52,7 @@ export const checkPostgres = async () => {
   await initPostgres();
   await pool.query(queries.health.check);
 };
+
+export const closePostgres = async () => {
+  await pool.end();
+};

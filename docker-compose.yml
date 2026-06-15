@@ -192,6 +192,11 @@ services:
   unit-tests:
     image: node:25-bookworm-slim
     working_dir: /app
+    environment:
+      DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/resume_analyzer
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.5}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
     volumes:
       - .:/app
       - unit_node_modules:/app/node_modules
