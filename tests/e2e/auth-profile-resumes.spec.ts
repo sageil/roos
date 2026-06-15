@@ -136,6 +136,9 @@ test.describe.serial("resume analyzer account and profile flows", () => {
 
     const versionRows = page.locator(".resume-version-row");
     await expect(versionRows).toHaveCount(2);
+    const userDownload = page.waitForEvent("download");
+    await versionRows.first().getByRole("button", { name: "Download" }).click();
+    expect((await userDownload).suggestedFilename()).toBe("resume-v2.md");
   });
 
   test("allows admin overview and denies the same endpoint to regular users", async ({ page, request }) => {
@@ -202,6 +205,9 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     if (process.env.DATABASE_URL) {
       const userCard = page.locator(".admin-user-card").filter({ hasText: regularEmail });
       await expect(userCard.getByText("admin-users-resume.md")).toBeVisible();
+      const adminDownload = page.waitForEvent("download");
+      await userCard.getByRole("button", { name: "Download resume" }).click();
+      expect((await adminDownload).suggestedFilename()).toBe("resume-v1.md");
       await expect(userCard.getByText(seededJobTitle)).toBeVisible();
       await expect(userCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
       const adminApplication = userCard.locator(".application-card").filter({ hasText: seededJobTitle });

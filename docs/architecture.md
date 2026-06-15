@@ -70,7 +70,7 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 1. Extract resume text from upload.
 2. Redact the authenticated user's profile name and email plus user-confirmed phone, address, and personal link values.
 3. Replace persisted upload filenames with neutral names that preserve only the extension.
-4. Store only the redacted profile resume text for versioned uploads.
+4. Store redacted profile resume text plus the original uploaded file bytes for authorized same-format downloads.
 5. Chunk redacted resume text.
 6. Create embeddings for the job query and redacted resume chunks.
 7. Store redacted resume chunk embeddings in PostgreSQL with pgvector.
@@ -78,6 +78,14 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 9. Ask the LLM for structured HR assessment fields using redacted evidence and redacted resume text.
 10. Compute final fit score and fit level deterministically in the server.
 11. Persist job result, analysis JSON, recommendation, models, and chunk count.
+
+## Resume Download Flow
+
+- Versioned profile resume uploads persist file bytes, content type, file size, neutral filename, and redacted extracted text.
+- `/api/resumes/:resumeId/download` requires authentication.
+- Standard users can download only their own resume versions.
+- Admins can download user resume versions from the admin users page.
+- The download response uses the stored content type and a neutral versioned filename such as `resume-v2.pdf`.
 
 ## Health Flow
 

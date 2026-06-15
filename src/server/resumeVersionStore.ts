@@ -8,8 +8,13 @@ type ResumeVersionRow = {
   version_number: number;
   file_name: string;
   content_type: string | null;
+  file_size: number;
   character_count: number;
   created_at: string;
+};
+
+type ResumeVersionDownloadRow = Omit<ResumeVersionRow, "character_count" | "created_at"> & {
+  file_bytes: Buffer;
 };
 
 const mapResumeVersionRow = (row: ResumeVersionRow): ResumeVersionRecord => ({
@@ -18,6 +23,7 @@ const mapResumeVersionRow = (row: ResumeVersionRow): ResumeVersionRecord => ({
   versionNumber: row.version_number,
   fileName: row.file_name,
   contentType: row.content_type ?? undefined,
+  fileSize: row.file_size,
   characterCount: row.character_count,
   createdAt: row.created_at
 });
@@ -26,12 +32,16 @@ export const createResumeVersion = async ({
   userId,
   fileName,
   contentType,
+  fileSize,
+  fileBytes,
   characterCount,
   resumeText
 }: {
   userId: number;
   fileName: string;
   contentType?: string;
+  fileSize: number;
+  fileBytes: Buffer;
   characterCount: number;
   resumeText: string;
 }): Promise<ResumeVersionRecord> => {
@@ -39,6 +49,8 @@ export const createResumeVersion = async ({
     userId,
     fileName,
     contentType || null,
+    fileSize,
+    fileBytes,
     characterCount,
     resumeText
   ]);
@@ -49,4 +61,34 @@ export const createResumeVersion = async ({
 export const listResumeVersions = async (userId: number): Promise<ResumeVersionRecord[]> => {
   const result = await queryPostgres<ResumeVersionRow>(queries.resumeVersions.listForUser, [userId]);
   return result.rows.map(mapResumeVersionRow);
+};
+
+export const getResumeVersionDownload = async ({
+  resumeId,
+  userId,
+  role
+}: {
+  resumeId: number;
+  userId: number;
+  role: "user" | "admin";
+}) => {
+  const result = await queryPostgres<ResumeVersionDownloadRow>(queries.resumeVersions.download, [
+    resumeId,
+    role,
+    userId
+  ]);
+  const row = result.rows[0];
+  if (!row) {
+    return undefined;
+  }
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    versionNumber: row.version_number,
+    fileName: row.file_name,
+    contentType: row.content_type ?? "application/octet-stream",
+    fileSize: row.file_size,
+    fileBytes: row.file_bytes
+  };
 };

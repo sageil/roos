@@ -12,6 +12,7 @@ vi.mock("../../src/server/sql.js", () => ({
   queries: {
     resumeVersions: {
       create: "resumeVersions.create",
+      download: "resumeVersions.download",
       listForUser: "resumeVersions.listForUser"
     }
   }
@@ -19,6 +20,7 @@ vi.mock("../../src/server/sql.js", () => ({
 
 import {
   createResumeVersion,
+  getResumeVersionDownload,
   listResumeVersions
 } from "../../src/server/resumeVersionStore.js";
 
@@ -28,6 +30,7 @@ const resumeVersionRow = {
   version_number: 2,
   file_name: "resume.pdf",
   content_type: "application/pdf",
+  file_size: 1024,
   character_count: 4200,
   created_at: "2026-06-14T12:00:00.000Z"
 };
@@ -45,6 +48,8 @@ describe("resumeVersionStore", () => {
         userId: 7,
         fileName: "resume.pdf",
         contentType: "application/pdf",
+        fileSize: 4,
+        fileBytes: Buffer.from("%PDF"),
         characterCount: 4200,
         resumeText: "resume text"
       })
@@ -54,6 +59,7 @@ describe("resumeVersionStore", () => {
       versionNumber: 2,
       fileName: "resume.pdf",
       contentType: "application/pdf",
+      fileSize: 1024,
       characterCount: 4200,
       createdAt: "2026-06-14T12:00:00.000Z"
     });
@@ -61,6 +67,8 @@ describe("resumeVersionStore", () => {
       7,
       "resume.pdf",
       "application/pdf",
+      4,
+      Buffer.from("%PDF"),
       4200,
       "resume text"
     ]);
@@ -76,7 +84,9 @@ describe("resumeVersionStore", () => {
         userId: 7,
         fileName: "resume.txt",
         characterCount: 1200,
-        resumeText: "resume text"
+        resumeText: "resume text",
+        fileSize: 11,
+        fileBytes: Buffer.from("resume text")
       })
     ).resolves.toMatchObject({
       contentType: undefined
@@ -85,6 +95,8 @@ describe("resumeVersionStore", () => {
       7,
       "resume.txt",
       null,
+      11,
+      Buffer.from("resume text"),
       1200,
       "resume text"
     ]);
@@ -100,10 +112,40 @@ describe("resumeVersionStore", () => {
         versionNumber: 2,
         fileName: "resume.pdf",
         contentType: "application/pdf",
+        fileSize: 1024,
         characterCount: 4200,
         createdAt: "2026-06-14T12:00:00.000Z"
       }
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("resumeVersions.listForUser", [7]);
+  });
+
+  it("loads downloadable resume bytes for authorized users", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 3,
+          user_id: 7,
+          version_number: 2,
+          file_name: "resume.pdf",
+          content_type: "application/pdf",
+          file_size: 4,
+          file_bytes: Buffer.from("%PDF")
+        }
+      ]
+    });
+
+    await expect(
+      getResumeVersionDownload({ resumeId: 3, userId: 7, role: "user" })
+    ).resolves.toMatchObject({
+      id: 3,
+      userId: 7,
+      versionNumber: 2,
+      fileName: "resume.pdf",
+      contentType: "application/pdf",
+      fileSize: 4,
+      fileBytes: Buffer.from("%PDF")
+    });
+    expect(queryPostgres).toHaveBeenCalledWith("resumeVersions.download", [3, "user", 7]);
   });
 });

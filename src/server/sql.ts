@@ -45,6 +45,7 @@ export const queries = {
   },
   resumeVersions: {
     create: loadSql("resume_versions", "create.sql"),
+    download: loadSql("resume_versions", "download.sql"),
     listForUser: loadSql("resume_versions", "list_for_user.sql")
   },
   sessions: {

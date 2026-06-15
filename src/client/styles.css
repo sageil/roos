@@ -1172,6 +1172,21 @@ h1 {
   grid-column: 1 / -1;
 }
 
+.resume-version-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-action {
+  width: auto;
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .application-list {
   display: grid;
   gap: 10px;

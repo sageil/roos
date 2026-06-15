@@ -152,6 +152,7 @@ describe("userStore", () => {
           versionNumber: 2,
           fileName: "resume-v2.pdf",
           contentType: "application/pdf",
+          fileSize: 1024,
           characterCount: 4200,
           createdAt: "2026-06-14T12:00:00.000Z"
         },
@@ -186,6 +187,7 @@ describe("userStore", () => {
           versionNumber: 2,
           fileName: "resume-v2.pdf",
           contentType: "application/pdf",
+          fileSize: 1024,
           characterCount: 4200,
           createdAt: "2026-06-14T12:00:00.000Z"
         },

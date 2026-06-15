@@ -179,6 +179,7 @@ export type ResumeVersionRecord = {
   versionNumber: number;
   fileName: string;
   contentType?: string;
+  fileSize: number;
   characterCount: number;
   createdAt: string;
 };

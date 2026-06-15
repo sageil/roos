@@ -12,7 +12,7 @@ import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPos
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
 import { redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
-import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js";
+import { createResumeVersion, getResumeVersionDownload, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
 import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
 import { extractResumeText } from "./textExtraction.js";
@@ -157,6 +157,11 @@ const safeResumeFileName = (originalName: string) => {
   const extension = path.extname(originalName).toLowerCase();
   const allowedExtensions = new Set([".pdf", ".docx", ".txt", ".md"]);
   return `resume${allowedExtensions.has(extension) ? extension : ""}`;
+};
+
+const downloadResumeFileName = (fileName: string, versionNumber: number) => {
+  const extension = path.extname(fileName).toLowerCase();
+  return `resume-v${versionNumber}${extension}`;
 };
 
 const requireAuth: express.RequestHandler = async (request, response, next) => {
@@ -375,6 +380,8 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
       userId: user.id,
       fileName: safeResumeFileName(request.file.originalname),
       contentType: request.file.mimetype,
+      fileSize: request.file.size,
+      fileBytes: request.file.buffer,
       characterCount: resumeText.length,
       resumeText
     });
@@ -385,6 +392,34 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
     const message = error instanceof Error ? error.message : "Resume upload failed.";
     response.status(400).json({ error: message });
   }
+});
+
+app.get("/api/resumes/:resumeId/download", requireAuth, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  const rawResumeId = request.params.resumeId;
+  const resumeId = typeof rawResumeId === "string" ? Number.parseInt(rawResumeId, 10) : Number.NaN;
+  if (!Number.isSafeInteger(resumeId) || resumeId <= 0) {
+    response.status(400).json({ error: "Choose a valid resume version." });
+    return;
+  }
+
+  const resume = await getResumeVersionDownload({
+    resumeId,
+    userId: user.id,
+    role: user.role
+  });
+  if (!resume) {
+    response.status(404).json({ error: "Resume version not found." });
+    return;
+  }
+
+  response.setHeader("Content-Type", resume.contentType);
+  response.setHeader("Content-Length", String(resume.fileBytes.length));
+  response.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${downloadResumeFileName(resume.fileName, resume.versionNumber)}"`
+  );
+  response.send(resume.fileBytes);
 });
 
 app.post("/api/logout", requireAuth, async (request, response) => {

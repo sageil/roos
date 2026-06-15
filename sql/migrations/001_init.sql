@@ -141,11 +141,17 @@ CREATE TABLE IF NOT EXISTS resume_versions (
   version_number INTEGER NOT NULL,
   file_name TEXT NOT NULL,
   content_type TEXT,
+  file_size INTEGER NOT NULL DEFAULT 0,
+  file_bytes BYTEA NOT NULL DEFAULT ''::bytea,
   character_count INTEGER NOT NULL,
   resume_text TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, version_number)
 );
+
+ALTER TABLE resume_versions
+  ADD COLUMN IF NOT EXISTS file_size INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS file_bytes BYTEA NOT NULL DEFAULT ''::bytea;
 
 CREATE TABLE IF NOT EXISTS analysis_cache (
   cache_key TEXT PRIMARY KEY,

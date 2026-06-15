@@ -24,6 +24,7 @@ LEFT JOIN LATERAL (
     'versionNumber', rv.version_number,
     'fileName', rv.file_name,
     'contentType', rv.content_type,
+    'fileSize', rv.file_size,
     'characterCount', rv.character_count,
     'createdAt', rv.created_at::text
   ) AS resume_json

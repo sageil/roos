@@ -11,6 +11,7 @@ import {
   Clock3,
   ClipboardList,
   Database,
+  Download,
   FileText,
   LockKeyhole,
   LogIn,
@@ -109,6 +110,21 @@ const serializePrivacyRedactions = (form: PrivacyRedactionForm) => ({
 });
 
 const redactionTotalLabel = (total: number) => `${total} privacy ${total === 1 ? "value" : "values"} removed`;
+
+const formatFileSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.ceil(bytes / 1024)} KB`;
+  }
+  return `${bytes} bytes`;
+};
+
+const filenameFromContentDisposition = (header: string | null, fallback: string) => {
+  const match = header?.match(/filename="([^"]+)"/i);
+  return match?.[1] ?? fallback;
+};
 
 const fitLabel = (score: number) => {
   if (score >= 80) {
@@ -642,7 +658,8 @@ const AdminUsersPanel = ({
   status,
   error,
   onSearchChange,
-  onRefresh
+  onRefresh,
+  onDownloadResume
 }: {
   users: AdminUserDetailRecord[];
   search: string;
@@ -650,6 +667,7 @@ const AdminUsersPanel = ({
   error: string;
   onSearchChange: (value: string) => void;
   onRefresh: () => void;
+  onDownloadResume: (resume: ResumeVersionRecord) => void;
 }) => {
   const [expandedApplicationId, setExpandedApplicationId] = useState<number | null>(null);
 
@@ -699,89 +717,104 @@ const AdminUsersPanel = ({
           {users.length === 0 ? (
             <p className="muted">No users match the current filter.</p>
           ) : (
-            users.map((adminUser) => (
-              <article className="admin-user-card" key={adminUser.id}>
-                <div className="admin-user-header">
-                  <div>
-                    <strong>{adminUser.name}</strong>
-                    <span>{adminUser.email}</span>
-                  </div>
-                  <div className="admin-user-badges">
-                    <StatusBadge tone={adminUser.role === "admin" ? "success" : "neutral"}>
-                      {adminUser.role}
-                    </StatusBadge>
-                    <StatusBadge>{adminUser.applicationCount} applications</StatusBadge>
-                  </div>
-              </div>
-
-                <div className="admin-user-grid">
-                  <section className="admin-user-section">
-                    <h3>Latest resume</h3>
-                    {adminUser.latestResume ? (
-                      <>
-                        <strong>Version {adminUser.latestResume.versionNumber}</strong>
-                        <span>{adminUser.latestResume.fileName}</span>
-                        <p>{Math.ceil(adminUser.latestResume.characterCount / 1000)}k chars | {adminUser.latestResume.createdAt}</p>
-                      </>
-                    ) : (
-                      <p className="muted">No resume uploaded.</p>
-                    )}
-                  </section>
-
-                  <section className="admin-user-section">
-                    <h3>Matched terms</h3>
-                    {adminUser.matchedTerms.length > 0 ? (
-                      <div className="tag-list">
-                        {adminUser.matchedTerms.slice(0, 12).map((term) => (
-                          <span className="tag-chip" key={term}>{term}</span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="muted">No matched terms yet.</p>
-                    )}
-                  </section>
-                </div>
-
-                <section className="admin-user-section">
-                  <h3>Recent applications</h3>
-                  {adminUser.recentApplications.length === 0 ? (
-                    <p className="muted">No applications yet.</p>
-                  ) : (
-                    <div className="admin-user-applications">
-                      {adminUser.recentApplications.map((job) => {
-                        const expanded = expandedApplicationId === job.id;
-                        return (
-                          <article className={`application-card admin-user-application-card${expanded ? " expanded" : ""}`} key={job.id}>
-                            <button
-                              className="application-summary"
-                              type="button"
-                              aria-expanded={expanded}
-                              onClick={() => setExpandedApplicationId(expanded ? null : job.id)}
-                            >
-                              <span className="application-chevron">
-                                {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                              </span>
-                              <span className="application-title">
-                                <strong>{job.jobTitle}</strong>
-                                <span>{job.applicationDate} | {job.status}</span>
-                                {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
-                              </span>
-                              <JobFitBadge job={job} />
-                            </button>
-
-                            {!expanded && job.llmRecommendation && (
-                              <p className="application-preview">{job.llmRecommendation}</p>
-                            )}
-
-                            {expanded && <ApplicationDetailsBody job={job} />}
-                          </article>
-                        );
-                      })}
+            users.map((adminUser) => {
+              const latestResume = adminUser.latestResume;
+              return (
+                <article className="admin-user-card" key={adminUser.id}>
+                  <div className="admin-user-header">
+                    <div>
+                      <strong>{adminUser.name}</strong>
+                      <span>{adminUser.email}</span>
                     </div>
-                  )}
-                </section>
-              </article>
-            ))
+                    <div className="admin-user-badges">
+                      <StatusBadge tone={adminUser.role === "admin" ? "success" : "neutral"}>
+                        {adminUser.role}
+                      </StatusBadge>
+                      <StatusBadge>{adminUser.applicationCount} applications</StatusBadge>
+                    </div>
+                  </div>
+
+                  <div className="admin-user-grid">
+                    <section className="admin-user-section">
+                      <h3>Latest resume</h3>
+                      {latestResume ? (
+                        <>
+                          <strong>Version {latestResume.versionNumber}</strong>
+                          <span>{latestResume.fileName}</span>
+                          <p>
+                            {formatFileSize(latestResume.fileSize)} |{" "}
+                            {Math.ceil(latestResume.characterCount / 1000)}k chars |{" "}
+                            {latestResume.createdAt}
+                          </p>
+                          <button
+                            className="secondary-button compact-action"
+                            type="button"
+                            onClick={() => onDownloadResume(latestResume)}
+                          >
+                            <Download size={16} />
+                            Download resume
+                          </button>
+                        </>
+                      ) : (
+                        <p className="muted">No resume uploaded.</p>
+                      )}
+                    </section>
+
+                    <section className="admin-user-section">
+                      <h3>Matched terms</h3>
+                      {adminUser.matchedTerms.length > 0 ? (
+                        <div className="tag-list">
+                          {adminUser.matchedTerms.slice(0, 12).map((term) => (
+                            <span className="tag-chip" key={term}>{term}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="muted">No matched terms yet.</p>
+                      )}
+                    </section>
+                  </div>
+
+                  <section className="admin-user-section">
+                    <h3>Recent applications</h3>
+                    {adminUser.recentApplications.length === 0 ? (
+                      <p className="muted">No applications yet.</p>
+                    ) : (
+                      <div className="admin-user-applications">
+                        {adminUser.recentApplications.map((job) => {
+                          const expanded = expandedApplicationId === job.id;
+                          return (
+                            <article className={`application-card admin-user-application-card${expanded ? " expanded" : ""}`} key={job.id}>
+                              <button
+                                className="application-summary"
+                                type="button"
+                                aria-expanded={expanded}
+                                onClick={() => setExpandedApplicationId(expanded ? null : job.id)}
+                              >
+                                <span className="application-chevron">
+                                  {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                </span>
+                                <span className="application-title">
+                                  <strong>{job.jobTitle}</strong>
+                                  <span>{job.applicationDate} | {job.status}</span>
+                                  {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
+                                </span>
+                                <JobFitBadge job={job} />
+                              </button>
+
+                              {!expanded && job.llmRecommendation && (
+                                <p className="application-preview">{job.llmRecommendation}</p>
+                              )}
+
+                              {expanded && <ApplicationDetailsBody job={job} />}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </article>
+              );
+            })
           )}
         </div>
       </section>
@@ -1755,6 +1788,44 @@ export const App = () => {
     }
   };
 
+  const downloadResume = async (resume: ResumeVersionRecord) => {
+    setResumeUploadError("");
+    setAdminUsersError("");
+
+    try {
+      const response = await fetch(`/api/resumes/${resume.id}/download`, {
+        headers: authHeaders()
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Resume download failed.");
+      }
+
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filenameFromContentDisposition(
+        response.headers.get("content-disposition"),
+        resume.fileName
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Resume download failed.";
+      if (activeView === "adminUsers") {
+        setAdminUsersError(message);
+        setAdminUsersStatus("error");
+      } else {
+        setResumeUploadError(message);
+        setResumeUploadStatus("error");
+      }
+    }
+  };
+
   const addPostingSkill = () => {
     const skill = newPostingSkill.trim();
     if (!skill || newPostingSkills.includes(skill)) {
@@ -2313,6 +2384,7 @@ export const App = () => {
               error={adminUsersError}
               onSearchChange={setAdminUsersSearch}
               onRefresh={() => void loadAdminUsers()}
+              onDownloadResume={(resume) => void downloadResume(resume)}
             />
           )}
 
@@ -2565,8 +2637,18 @@ export const App = () => {
                           <strong>Version {resume.versionNumber}</strong>
                           <span>{resume.fileName}</span>
                         </div>
-                        <StatusBadge>{Math.ceil(resume.characterCount / 1000)}k chars</StatusBadge>
-                        <p>{resume.createdAt}</p>
+                        <div className="resume-version-actions">
+                          <StatusBadge>{formatFileSize(resume.fileSize)}</StatusBadge>
+                          <button
+                            className="secondary-button compact-action"
+                            type="button"
+                            onClick={() => void downloadResume(resume)}
+                          >
+                            <Download size={16} />
+                            Download
+                          </button>
+                        </div>
+                        <p>{Math.ceil(resume.characterCount / 1000)}k chars | {resume.createdAt}</p>
                       </article>
                     ))
                   )}

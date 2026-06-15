@@ -5,8 +5,8 @@ SELECT
   file_name,
   content_type,
   file_size,
-  character_count,
-  created_at::text
+  file_bytes
 FROM resume_versions
-WHERE user_id = $1
-ORDER BY version_number DESC;
+WHERE id = $1
+  AND ($2 = 'admin' OR user_id = $3)
+LIMIT 1;

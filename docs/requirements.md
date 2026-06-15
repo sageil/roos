@@ -15,6 +15,8 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 - Profile resume uploads are versioned append-only records.
 - Uploading a new resume must never replace or overwrite an older resume version.
 - Users can review resume versions from their profile.
+- Users can download their own resume versions in the same file format they uploaded.
+- Admins can download user resume versions from the admin users page.
 - Resume uploads must prompt users to confirm name, email, phone, address, and personal link values that should be removed.
 - Confirmed privacy values and the authenticated user's profile name and email must be redacted before resume text is stored, embedded, cached, indexed, or sent to an LLM.
 - Persisted resume filenames must use neutral names that preserve only the file type extension.

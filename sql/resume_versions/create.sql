@@ -8,6 +8,8 @@ INSERT INTO resume_versions (
   version_number,
   file_name,
   content_type,
+  file_size,
+  file_bytes,
   character_count,
   resume_text
 )
@@ -17,7 +19,9 @@ SELECT
   $2,
   $3,
   $4,
-  $5
+  $5,
+  $6,
+  $7
 FROM next_version
 RETURNING
   id::int,
@@ -25,5 +29,6 @@ RETURNING
   version_number,
   file_name,
   content_type,
+  file_size,
   character_count,
   created_at::text;

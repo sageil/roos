@@ -17,9 +17,11 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users have a dedicated login page and profile page.
 - Users have a dedicated jobs page to search roles by exact text and semantic meaning before matching a resume.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
+- Users can download their versioned resume uploads in the same file format they uploaded.
 - Resume uploads ask users to confirm personal identifiers and redact them before storage, embedding, cache lookup, or LLM analysis.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
 - Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles.
+- Admins can download user profile resume versions in the same file format the user uploaded.
 - Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
 - Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
@@ -128,7 +130,7 @@ The System Health page probes app instances from the API container using `APP_IN
 
 Repeated analyses for the same normalized resume text, job title, job description, LLM model, and embedding model reuse the cached structured analysis. Each application still gets its own job row and evidence chunks, but the fit score and recommendation remain consistent for identical inputs.
 
-Resume privacy redaction runs locally in the API before any resume text is stored or sent to an embedding or LLM provider. The server always includes the authenticated user's profile name and email in the redaction set, and the upload UI asks users to confirm any phone numbers, address lines, and personal links that should also be removed. Persisted upload filenames are replaced with neutral names such as `resume.pdf` to avoid leaking names through metadata.
+Resume privacy redaction runs locally in the API before any extracted resume text is stored for analysis or sent to an embedding or LLM provider. The server always includes the authenticated user's profile name and email in the redaction set, and the upload UI asks users to confirm any phone numbers, address lines, and personal links that should also be removed. Persisted upload filenames are replaced with neutral names such as `resume.pdf` to avoid leaking names through metadata. The original uploaded file bytes are stored separately so authorized users and admins can download the resume in the same file format.
 
 For OpenAI:
 
