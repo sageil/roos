@@ -11,6 +11,10 @@ const seedCompletedApplicationSql = readFileSync(
   path.resolve("tests/fixtures/seed_completed_application.sql"),
   "utf8"
 );
+const seedResumeVersionSql = readFileSync(
+  path.resolve("tests/fixtures/seed_resume_version.sql"),
+  "utf8"
+);
 
 const uniqueEmail = (prefix: string) => `${prefix}-${Date.now()}-${Math.round(Math.random() * 100_000)}@example.com`;
 
@@ -70,6 +74,16 @@ const seedCompletedApplication = async ({
         JSON.stringify(seededAnalysis)
       ]
     );
+  } finally {
+    await client.end();
+  }
+};
+
+const seedResumeVersion = async ({ userId, fileName }: { userId: number; fileName: string }) => {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(seedResumeVersionSql, [userId, fileName]);
   } finally {
     await client.end();
   }
@@ -149,6 +163,18 @@ test.describe.serial("resume analyzer account and profile flows", () => {
       }
     });
     expect(healthDenied.status()).toBe(403);
+    const usersDenied = await request.get("/api/admin/users", {
+      headers: {
+        Authorization: `Bearer ${regularSession.token}`
+      }
+    });
+    expect(usersDenied.status()).toBe(403);
+
+    const seededJobTitle = `Seeded TypeScript Role ${Date.now()}`;
+    if (process.env.DATABASE_URL) {
+      await seedResumeVersion({ userId: regularSession.user.id, fileName: "admin-users-resume.md" });
+      await seedCompletedApplication({ userId: regularSession.user.id, jobTitle: seededJobTitle });
+    }
 
     await page.goto("/");
     await page.getByPlaceholder("admin@example.com").fill(adminEmail);
@@ -157,17 +183,28 @@ test.describe.serial("resume analyzer account and profile flows", () => {
 
     await expect(page.getByRole("heading", { name: "Admin Overview" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-    await expect(page.getByText(regularEmail)).toBeVisible();
+    await expect(page.getByText(regularEmail, { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Job Postings" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Candidate Matches" })).toBeVisible();
 
     await page.getByRole("button", { name: "Health" }).click();
     await expect(page.getByRole("heading", { name: "System Health" })).toBeVisible();
-    await expect(page.getByText("PostgreSQL")).toBeVisible();
-    await expect(page.getByText("pgvector")).toBeVisible();
+    await expect(page.locator(".health-card").filter({ hasText: "PostgreSQL" })).toBeVisible();
+    await expect(page.locator(".health-card").filter({ hasText: "pgvector" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Application Instances" })).toBeVisible();
     await expect(page.getByText("app-1", { exact: true })).toBeVisible();
     await expect(page.getByText("app-2", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Users" }).click();
+    await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
+    await page.getByPlaceholder("TypeScript, Java, PostgreSQL, product manager...").fill("TypeScript");
+    await expect(page.locator(".admin-user-card").filter({ hasText: regularEmail })).toBeVisible();
+    if (process.env.DATABASE_URL) {
+      const userCard = page.locator(".admin-user-card").filter({ hasText: regularEmail });
+      await expect(userCard.getByText("admin-users-resume.md")).toBeVisible();
+      await expect(userCard.getByText(seededJobTitle)).toBeVisible();
+      await expect(userCard.locator(".tag-chip").filter({ hasText: "TypeScript" })).toBeVisible();
+    }
 
     const postingTitle = `E2E Platform Engineer ${Date.now()}`;
     await page.getByRole("button", { name: "Add jobs" }).click();

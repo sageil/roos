@@ -17,6 +17,7 @@ vi.mock("../../src/server/sql.js", () => ({
       create: "users.create",
       findByEmail: "users.findByEmail",
       list: "users.list",
+      listAdminDetails: "users.listAdminDetails",
       updateProfile: "users.updateProfile",
       upsertAdmin: "users.upsertAdmin"
     }
@@ -27,6 +28,7 @@ import {
   createUser,
   findUserByEmail,
   getAdminStats,
+  listAdminUserDetails,
   listUsers,
   updateUserProfile,
   upsertAdminUser
@@ -136,6 +138,71 @@ describe("userStore", () => {
       }
     ]);
     expect(queryPostgres).toHaveBeenCalledWith("users.list", [25]);
+  });
+
+  it("lists admin user details with latest resume, matched terms, and recent applications", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{
+        ...userRow,
+        application_count: 2,
+        matched_terms: ["PostgreSQL", "TypeScript"],
+        resume_json: {
+          id: 11,
+          userId: 7,
+          versionNumber: 2,
+          fileName: "resume-v2.pdf",
+          contentType: "application/pdf",
+          characterCount: 4200,
+          createdAt: "2026-06-14T12:00:00.000Z"
+        },
+        recent_jobs_json: [{
+          id: 20,
+          userId: 7,
+          status: "completed",
+          applicationDate: "2026-06-14",
+          jobTitle: "Platform Engineer",
+          fitScore: 82,
+          fitLevel: "high",
+          createdAt: "2026-06-14T12:00:00.000Z",
+          updatedAt: "2026-06-14T12:05:00.000Z"
+        }]
+      }]
+    });
+
+    await expect(listAdminUserDetails({ search: " postgres ", limit: 25 })).resolves.toEqual([
+      {
+        id: 7,
+        name: "Ada Lovelace",
+        email: "ada@example.com",
+        role: "user",
+        createdAt: "2026-06-14T10:00:00.000Z",
+        applicationCount: 2,
+        matchedTerms: ["PostgreSQL", "TypeScript"],
+        latestResume: {
+          id: 11,
+          userId: 7,
+          versionNumber: 2,
+          fileName: "resume-v2.pdf",
+          contentType: "application/pdf",
+          characterCount: 4200,
+          createdAt: "2026-06-14T12:00:00.000Z"
+        },
+        recentApplications: [
+          {
+            id: 20,
+            userId: 7,
+            status: "completed",
+            applicationDate: "2026-06-14",
+            jobTitle: "Platform Engineer",
+            fitScore: 82,
+            fitLevel: "high",
+            createdAt: "2026-06-14T12:00:00.000Z",
+            updatedAt: "2026-06-14T12:05:00.000Z"
+          }
+        ]
+      }
+    ]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["postgres", 25]);
   });
 
   it("upserts an admin with normalized email", async () => {

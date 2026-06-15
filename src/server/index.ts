@@ -14,7 +14,15 @@ import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
 import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
 import { extractResumeText } from "./textExtraction.js";
-import { createUser, findUserByEmail, getAdminStats, listUsers, updateUserProfile, upsertAdminUser } from "./userStore.js";
+import {
+  createUser,
+  findUserByEmail,
+  getAdminStats,
+  listAdminUserDetails,
+  listUsers,
+  updateUserProfile,
+  upsertAdminUser
+} from "./userStore.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -76,6 +84,11 @@ const createJobPostingBodySchema = z.object({
   ...body,
   skills: Array.from(new Set(body.skills.map((skill) => skill.trim()).filter(Boolean)))
 }));
+
+const adminUsersQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional()
+});
 
 type AuthenticatedRequest = express.Request & {
   user: UserRecord;
@@ -281,6 +294,16 @@ app.get("/api/admin/overview", requireAuth, requireAdmin, async (_request, respo
   ]);
 
   response.json({ users, jobs, jobPostings, stats });
+});
+
+app.get("/api/admin/users", requireAuth, requireAdmin, async (request, response) => {
+  const query = adminUsersQuerySchema.parse(request.query);
+  response.json({
+    users: await listAdminUserDetails({
+      search: query.search ?? "",
+      limit: query.limit ?? 100
+    })
+  });
 });
 
 app.get("/api/admin/system-health", requireAuth, requireAdmin, async (_request, response) => {

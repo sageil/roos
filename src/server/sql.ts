@@ -34,6 +34,7 @@ export const queries = {
     create: loadSql("users", "create.sql"),
     findByEmail: loadSql("users", "find_by_email.sql"),
     list: loadSql("users", "list.sql"),
+    listAdminDetails: loadSql("users", "list_admin_details.sql"),
     updateProfile: loadSql("users", "update_profile.sql"),
     upsertAdmin: loadSql("users", "upsert_admin.sql")
   },

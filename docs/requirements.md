@@ -19,6 +19,8 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 ## Job Postings And Applications
 
 - Admins have a dedicated jobs page to create job postings, enter required skills as tags, and review postings plus candidate matches.
+- Admins have a dedicated users page to search users by name, email, resume filename, job history, posting skills, and stored match evidence.
+- Admins can review each user's latest resume metadata, matched terms, and recent applied jobs from the users page.
 - Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`.
 - Job postings must stay separate from application and match records.
 - Users and admins can select an active posting when analyzing a resume.

@@ -18,6 +18,7 @@ import {
   Mail,
   Layers3,
   Loader2,
+  Search,
   SearchCheck,
   Server,
   ShieldCheck,
@@ -31,6 +32,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
+  AdminUserDetailRecord,
+  AdminUsersResponse,
   AdminOverviewResponse,
   AnalyzeResponse,
   CreateJobPostingResponse,
@@ -521,6 +524,133 @@ const ProfileApplications = ({
   );
 };
 
+const AdminUsersPanel = ({
+  users,
+  search,
+  status,
+  error,
+  onSearchChange,
+  onRefresh
+}: {
+  users: AdminUserDetailRecord[];
+  search: string;
+  status: Status;
+  error: string;
+  onSearchChange: (value: string) => void;
+  onRefresh: () => void;
+}) => (
+  <section className="admin-users-view">
+    <section className="surface-card full">
+      <div className="panel-heading split-heading">
+        <div>
+          <UsersRound size={19} />
+          <h2>Users</h2>
+        </div>
+        <StatusBadge tone={status === "loading" ? "warning" : "neutral"}>
+          {status === "loading" ? "Searching" : `${users.length} shown`}
+        </StatusBadge>
+      </div>
+
+      <div className="admin-user-toolbar">
+        <label className="field">
+          <span>Search users, skills, jobs, resumes, and match evidence</span>
+          <div className="input-with-icon">
+            <Search size={18} />
+            <input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="TypeScript, Java, PostgreSQL, product manager..."
+            />
+          </div>
+        </label>
+        <button className="secondary-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
+          {status === "loading" ? <Loader2 className="spin" size={18} /> : <SearchCheck size={18} />}
+          Apply filter
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="notice error">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="admin-user-list">
+        {users.length === 0 ? (
+          <p className="muted">No users match the current filter.</p>
+        ) : (
+          users.map((adminUser) => (
+            <article className="admin-user-card" key={adminUser.id}>
+              <div className="admin-user-header">
+                <div>
+                  <strong>{adminUser.name}</strong>
+                  <span>{adminUser.email}</span>
+                </div>
+                <div className="admin-user-badges">
+                  <StatusBadge tone={adminUser.role === "admin" ? "success" : "neutral"}>
+                    {adminUser.role}
+                  </StatusBadge>
+                  <StatusBadge>{adminUser.applicationCount} applications</StatusBadge>
+                </div>
+              </div>
+
+              <div className="admin-user-grid">
+                <section className="admin-user-section">
+                  <h3>Latest resume</h3>
+                  {adminUser.latestResume ? (
+                    <>
+                      <strong>Version {adminUser.latestResume.versionNumber}</strong>
+                      <span>{adminUser.latestResume.fileName}</span>
+                      <p>{Math.ceil(adminUser.latestResume.characterCount / 1000)}k chars | {adminUser.latestResume.createdAt}</p>
+                    </>
+                  ) : (
+                    <p className="muted">No resume uploaded.</p>
+                  )}
+                </section>
+
+                <section className="admin-user-section">
+                  <h3>Matched terms</h3>
+                  {adminUser.matchedTerms.length > 0 ? (
+                    <div className="tag-list">
+                      {adminUser.matchedTerms.slice(0, 12).map((term) => (
+                        <span className="tag-chip" key={term}>{term}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">No matched terms yet.</p>
+                  )}
+                </section>
+              </div>
+
+              <section className="admin-user-section">
+                <h3>Recent applications</h3>
+                {adminUser.recentApplications.length === 0 ? (
+                  <p className="muted">No applications yet.</p>
+                ) : (
+                  <div className="admin-user-applications">
+                    {adminUser.recentApplications.map((job) => (
+                      <article className="admin-user-application-row" key={job.id}>
+                        <div>
+                          <strong>{job.jobTitle}</strong>
+                          <span>{job.applicationDate} | {job.status}</span>
+                          {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
+                        </div>
+                        <JobFitBadge job={job} />
+                        {job.llmRecommendation && <p>{job.llmRecommendation}</p>}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  </section>
+);
+
 const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
   <section className="admin-overview">
     <div className="panel-heading">
@@ -806,10 +936,14 @@ export const App = () => {
   const [loginStatus, setLoginStatus] = useState<Status>("idle");
   const [loginError, setLoginError] = useState("");
   const [adminOverview, setAdminOverview] = useState<AdminOverviewResponse | null>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUserDetailRecord[]>([]);
+  const [adminUsersSearch, setAdminUsersSearch] = useState("");
+  const [adminUsersStatus, setAdminUsersStatus] = useState<Status>("idle");
+  const [adminUsersError, setAdminUsersError] = useState("");
   const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null);
   const [systemHealthStatus, setSystemHealthStatus] = useState<Status>("idle");
   const [systemHealthError, setSystemHealthError] = useState("");
-  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs" | "systemHealth">("dashboard");
+  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs" | "adminUsers" | "systemHealth">("dashboard");
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
@@ -852,6 +986,10 @@ export const App = () => {
     setJobs([]);
     setJobPostings([]);
     setAdminOverview(null);
+    setAdminUsers([]);
+    setAdminUsersSearch("");
+    setAdminUsersStatus("idle");
+    setAdminUsersError("");
     setSystemHealth(null);
     setSystemHealthStatus("idle");
     setSystemHealthError("");
@@ -894,6 +1032,38 @@ export const App = () => {
     }
 
     setAdminOverview((await response.json()) as AdminOverviewResponse);
+  };
+
+  const loadAdminUsers = async (activeToken = token, search = adminUsersSearch) => {
+    if (!activeToken) {
+      setAdminUsers([]);
+      return;
+    }
+
+    setAdminUsersError("");
+    setAdminUsersStatus("loading");
+    try {
+      const params = new URLSearchParams();
+      const trimmedSearch = search.trim();
+      if (trimmedSearch) {
+        params.set("search", trimmedSearch);
+      }
+
+      const response = await fetch(`/api/admin/users${params.size ? `?${params.toString()}` : ""}`, {
+        headers: authHeaders(activeToken)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "User search failed.");
+      }
+
+      setAdminUsers((data as AdminUsersResponse).users);
+      setAdminUsersStatus("success");
+    } catch (caught) {
+      setAdminUsersStatus("error");
+      setAdminUsersError(caught instanceof Error ? caught.message : "User search failed.");
+    }
   };
 
   const loadSystemHealth = async (activeToken = token) => {
@@ -995,6 +1165,7 @@ export const App = () => {
       await loadProfile(token);
       if (data.user.role === "admin") {
         await loadAdminOverview(token);
+        await loadAdminUsers(token, "");
       }
     };
 
@@ -1010,6 +1181,18 @@ export const App = () => {
     setJobTitle(selectedPosting.title);
     setJobDescription(selectedPosting.description);
   }, [jobPostings, selectedJobPostingId]);
+
+  useEffect(() => {
+    if (!token || user?.role !== "admin" || activeView !== "adminUsers") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadAdminUsers(token, adminUsersSearch);
+    }, 300);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeView, adminUsersSearch, token, user?.role]);
 
   const fileLabel = useMemo(() => {
     if (!file) {
@@ -1072,6 +1255,7 @@ export const App = () => {
       void loadJobPostings();
       if (user.role === "admin") {
         void loadAdminOverview();
+        void loadAdminUsers();
       }
       void loadHealth();
     } catch (caught) {
@@ -1111,6 +1295,7 @@ export const App = () => {
       await loadProfile(session.token);
       if (session.user.role === "admin") {
         await loadAdminOverview(session.token);
+        await loadAdminUsers(session.token, "");
       }
     } catch (caught) {
       setLoginStatus("error");
@@ -1172,6 +1357,11 @@ export const App = () => {
   const openProfile = async () => {
     setActiveView("profile");
     await loadProfile();
+  };
+
+  const openAdminUsers = async () => {
+    setActiveView("adminUsers");
+    await loadAdminUsers();
   };
 
   const openSystemHealth = async () => {
@@ -1505,6 +1695,10 @@ export const App = () => {
           </button>
           {user.role === "admin" && (
             <>
+              <button className="nav-button" type="button" onClick={openAdminUsers}>
+                <UsersRound size={16} />
+                Users
+              </button>
               <button className="nav-button" type="button" onClick={openSystemHealth}>
                 <Server size={16} />
                 Health
@@ -1770,6 +1964,17 @@ export const App = () => {
         </aside>
 
         <section className="results-column">
+          {activeView === "adminUsers" && user.role === "admin" && (
+            <AdminUsersPanel
+              users={adminUsers}
+              search={adminUsersSearch}
+              status={adminUsersStatus}
+              error={adminUsersError}
+              onSearchChange={setAdminUsersSearch}
+              onRefresh={() => void loadAdminUsers()}
+            />
+          )}
+
           {activeView === "systemHealth" && user.role === "admin" && (
             <SystemHealthPanel
               health={systemHealth}

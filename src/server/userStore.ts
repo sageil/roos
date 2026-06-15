@@ -1,4 +1,11 @@
-import type { AdminStats, AdminUserRecord, UserRecord } from "../shared/types.js";
+import type {
+  AdminStats,
+  AdminUserDetailRecord,
+  AdminUserRecord,
+  JobRecord,
+  ResumeVersionRecord,
+  UserRecord
+} from "../shared/types.js";
 import { queryPostgres } from "./database.js";
 import { queries } from "./sql.js";
 
@@ -13,6 +20,12 @@ type UserRow = {
 
 type AdminUserRow = UserRow & {
   application_count: number;
+};
+
+type AdminUserDetailRow = AdminUserRow & {
+  resume_json: ResumeVersionRecord | string | null;
+  recent_jobs_json: JobRecord[] | string | null;
+  matched_terms: string[] | null;
 };
 
 type AdminStatsRow = {
@@ -34,6 +47,29 @@ const mapUserRow = (row: UserRow): UserRecord => ({
 const mapAdminUserRow = (row: AdminUserRow): AdminUserRecord => ({
   ...mapUserRow(row),
   applicationCount: row.application_count
+});
+
+const parseJsonValue = <T>(value: T | string | null): T | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
+};
+
+const mapAdminUserDetailRow = (row: AdminUserDetailRow): AdminUserDetailRecord => ({
+  ...mapAdminUserRow(row),
+  latestResume: parseJsonValue<ResumeVersionRecord>(row.resume_json),
+  recentApplications: parseJsonValue<JobRecord[]>(row.recent_jobs_json) ?? [],
+  matchedTerms: row.matched_terms ?? []
 });
 
 export const createUser = async ({
@@ -103,6 +139,21 @@ export const updateUserProfile = async ({
 export const listUsers = async (limit = 100): Promise<AdminUserRecord[]> => {
   const result = await queryPostgres<AdminUserRow>(queries.users.list, [limit]);
   return result.rows.map(mapAdminUserRow);
+};
+
+export const listAdminUserDetails = async ({
+  search = "",
+  limit = 100
+}: {
+  search?: string;
+  limit?: number;
+} = {}): Promise<AdminUserDetailRecord[]> => {
+  const result = await queryPostgres<AdminUserDetailRow>(queries.users.listAdminDetails, [
+    search.trim(),
+    limit
+  ]);
+
+  return result.rows.map(mapAdminUserDetailRow);
 };
 
 export const upsertAdminUser = async ({

@@ -116,6 +116,12 @@ export type AdminUserRecord = UserRecord & {
   applicationCount: number;
 };
 
+export type AdminUserDetailRecord = AdminUserRecord & {
+  latestResume?: ResumeVersionRecord;
+  recentApplications: JobRecord[];
+  matchedTerms: string[];
+};
+
 export type AdminStats = {
   userCount: number;
   jobCount: number;
@@ -129,6 +135,10 @@ export type AdminOverviewResponse = {
   jobs: JobRecord[];
   jobPostings: JobPostingRecord[];
   stats: AdminStats;
+};
+
+export type AdminUsersResponse = {
+  users: AdminUserDetailRecord[];
 };
 
 export type JobPostingRecord = {

@@ -786,6 +786,121 @@ h1 {
   gap: 14px;
 }
 
+.admin-users-view {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-user-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.admin-user-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-user-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-soft);
+}
+
+.admin-user-header,
+.admin-user-badges {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-user-header {
+  justify-content: space-between;
+}
+
+.admin-user-header > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-user-badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-user-header strong,
+.admin-user-section strong,
+.admin-user-application-row strong {
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.admin-user-header span,
+.admin-user-section span,
+.admin-user-section p,
+.admin-user-application-row span,
+.admin-user-application-row p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.admin-user-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.admin-user-section {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fffaf5;
+}
+
+.admin-user-section h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.admin-user-applications {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-user-application-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-soft);
+}
+
+.admin-user-application-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-user-application-row p {
+  grid-column: 1 / -1;
+}
+
 .admin-overview > .panel-heading {
   margin-bottom: 0;
   padding: 17px;
@@ -1538,6 +1653,8 @@ h1 {
   .analysis-grid,
   .empty-grid,
   .admin-grid,
+  .admin-user-grid,
+  .admin-user-toolbar,
   .health-summary-grid,
   .health-card-grid,
   .application-meta-grid,
