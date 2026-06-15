@@ -1451,18 +1451,6 @@ export const App = () => {
           </div>
         </div>
         <div className="system-strip">
-          <StatusBadge tone="success">
-            <Database size={14} />
-            PostgreSQL
-          </StatusBadge>
-          <StatusBadge tone={health?.storage?.postgres.ok ? "success" : "warning"}>
-            <Server size={14} />
-            {health?.storage?.postgres.ok ? "pgvector ready" : "Postgres offline"}
-          </StatusBadge>
-          <StatusBadge>
-            <Activity size={14} />
-            {health?.models.embedding ?? "Embeddings"}
-          </StatusBadge>
           <button className="nav-button" type="button" onClick={() => setActiveView("dashboard")}>
             <ClipboardList size={16} />
             Dashboard
