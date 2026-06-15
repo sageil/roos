@@ -12,6 +12,7 @@ import { hashPassword, verifyPassword } from "./passwords.js";
 import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs } from "./postgresStore.js";
 import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
+import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
 import { extractResumeText } from "./textExtraction.js";
 import { createUser, findUserByEmail, getAdminStats, listUsers, updateUserProfile, upsertAdminUser } from "./userStore.js";
 
@@ -147,6 +148,10 @@ app.get("/api/health", async (_request, response) => {
   });
 });
 
+app.get("/api/instance-health", (_request, response) => {
+  response.json(localInstanceHealth());
+});
+
 app.get("/api/jobs", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   response.json({ jobs: await listJobs({ userId: user.id, role: user.role }) });
@@ -276,6 +281,10 @@ app.get("/api/admin/overview", requireAuth, requireAdmin, async (_request, respo
   ]);
 
   response.json({ users, jobs, jobPostings, stats });
+});
+
+app.get("/api/admin/system-health", requireAuth, requireAdmin, async (_request, response) => {
+  response.json(await buildSystemHealth());
 });
 
 app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, response) => {

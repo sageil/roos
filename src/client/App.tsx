@@ -43,6 +43,7 @@ import type {
   RegisterResponse,
   ResumeAnalysis,
   ResumeVersionRecord,
+  SystemHealthResponse,
   UpdateProfileResponse,
   UploadResumeResponse,
   UserRecord
@@ -581,6 +582,162 @@ const AdminOverview = ({ overview }: { overview: AdminOverviewResponse }) => (
   </section>
 );
 
+const healthTone = (status: "online" | "degraded" | "offline"): "success" | "warning" | "danger" => {
+  if (status === "online") {
+    return "success";
+  }
+  if (status === "degraded") {
+    return "warning";
+  }
+  return "danger";
+};
+
+const SystemHealthPanel = ({
+  health,
+  status,
+  error,
+  onRefresh
+}: {
+  health: SystemHealthResponse | null;
+  status: Status;
+  error: string;
+  onRefresh: () => void;
+}) => (
+  <div className="system-health-view">
+    <section className="surface-card full">
+      <div className="panel-heading split-heading">
+        <div>
+          <Server size={19} />
+          <h2>System Health</h2>
+        </div>
+        <div className="health-actions">
+          {health && (
+            <StatusBadge tone={health.ok ? "success" : "danger"}>
+              {health.ok ? "All systems online" : "Action needed"}
+            </StatusBadge>
+          )}
+          <button className="secondary-button compact-button" disabled={status === "loading"} type="button" onClick={onRefresh}>
+            {status === "loading" ? <Loader2 className="spin" size={16} /> : <Activity size={16} />}
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {status === "error" && (
+        <div className="notice error">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {health ? (
+        <>
+          <div className="health-summary-grid">
+            <MetricTile
+              icon={<Server size={17} />}
+              label="Overall"
+              value={health.ok ? "Online" : "Degraded"}
+              caption={health.generatedAt}
+            />
+            <MetricTile
+              icon={<Layers3 size={17} />}
+              label="App instances"
+              value={`${health.instances.filter((instance) => instance.status === "online").length}/${health.instances.length}`}
+              caption="private Compose services"
+            />
+            <MetricTile
+              icon={<Database size={17} />}
+              label="Storage"
+              value={health.components.find((component) => component.name === "PostgreSQL")?.status ?? "unknown"}
+              caption="Postgres and pgvector"
+            />
+            <MetricTile
+              icon={<Activity size={17} />}
+              label="Models"
+              value={health.models.llmApiStyle}
+              caption={health.models.embedding}
+            />
+          </div>
+
+          <section className="health-section">
+            <div className="panel-heading">
+              <ShieldCheck size={19} />
+              <h2>Components</h2>
+            </div>
+            <div className="health-card-grid">
+              {health.components.map((component) => (
+                <article className="health-card" key={component.name}>
+                  <div>
+                    <strong>{component.name}</strong>
+                    <StatusBadge tone={healthTone(component.status)}>{component.status}</StatusBadge>
+                  </div>
+                  <p>{component.details}</p>
+                  <span>{component.checkedAt}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="health-section">
+            <div className="panel-heading">
+              <Server size={19} />
+              <h2>Application Instances</h2>
+            </div>
+            <div className="health-card-grid">
+              {health.instances.map((instance) => (
+                <article className="health-card" key={`${instance.name}-${instance.url}`}>
+                  <div>
+                    <strong>{instance.name}</strong>
+                    <StatusBadge tone={instance.status === "online" ? "success" : "danger"}>
+                      {instance.status}
+                    </StatusBadge>
+                  </div>
+                  <p>{instance.url}</p>
+                  <dl className="health-details">
+                    {instance.hostname && (
+                      <>
+                        <dt>Host</dt>
+                        <dd>{instance.hostname}</dd>
+                      </>
+                    )}
+                    {typeof instance.pid === "number" && (
+                      <>
+                        <dt>PID</dt>
+                        <dd>{instance.pid}</dd>
+                      </>
+                    )}
+                    {typeof instance.uptimeSeconds === "number" && (
+                      <>
+                        <dt>Uptime</dt>
+                        <dd>{instance.uptimeSeconds}s</dd>
+                      </>
+                    )}
+                    {instance.error && (
+                      <>
+                        <dt>Error</dt>
+                        <dd>{instance.error}</dd>
+                      </>
+                    )}
+                  </dl>
+                  <span>{instance.checkedAt}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : (
+        <div className="empty-state compact-empty">
+          <div className="empty-mark">
+            {status === "loading" ? <Loader2 className="spin" size={34} /> : <Server size={34} />}
+          </div>
+          <h2>{status === "loading" ? "Checking system" : "No health data loaded"}</h2>
+          <p>Refresh to check storage, providers, and application instances.</p>
+        </div>
+      )}
+    </section>
+  </div>
+);
+
 export const App = () => {
   const [file, setFile] = useState<File | null>(null);
   const [jobTitle, setJobTitle] = useState("Senior Software Engineer");
@@ -601,7 +758,10 @@ export const App = () => {
   const [loginStatus, setLoginStatus] = useState<Status>("idle");
   const [loginError, setLoginError] = useState("");
   const [adminOverview, setAdminOverview] = useState<AdminOverviewResponse | null>(null);
-  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs">("dashboard");
+  const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null);
+  const [systemHealthStatus, setSystemHealthStatus] = useState<Status>("idle");
+  const [systemHealthError, setSystemHealthError] = useState("");
+  const [activeView, setActiveView] = useState<"dashboard" | "profile" | "adminJobs" | "systemHealth">("dashboard");
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
@@ -644,6 +804,9 @@ export const App = () => {
     setJobs([]);
     setJobPostings([]);
     setAdminOverview(null);
+    setSystemHealth(null);
+    setSystemHealthStatus("idle");
+    setSystemHealthError("");
     setResult(null);
     setActiveView("dashboard");
     setProfileName("");
@@ -683,6 +846,32 @@ export const App = () => {
     }
 
     setAdminOverview((await response.json()) as AdminOverviewResponse);
+  };
+
+  const loadSystemHealth = async (activeToken = token) => {
+    if (!activeToken) {
+      setSystemHealth(null);
+      return;
+    }
+
+    setSystemHealthError("");
+    setSystemHealthStatus("loading");
+    try {
+      const response = await fetch("/api/admin/system-health", {
+        headers: authHeaders(activeToken)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "System health check failed.");
+      }
+
+      setSystemHealth(data as SystemHealthResponse);
+      setSystemHealthStatus("success");
+    } catch (caught) {
+      setSystemHealthStatus("error");
+      setSystemHealthError(caught instanceof Error ? caught.message : "System health check failed.");
+    }
   };
 
   const loadJobPostings = async (activeToken = token) => {
@@ -935,6 +1124,11 @@ export const App = () => {
   const openProfile = async () => {
     setActiveView("profile");
     await loadProfile();
+  };
+
+  const openSystemHealth = async () => {
+    setActiveView("systemHealth");
+    await loadSystemHealth();
   };
 
   const saveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1274,10 +1468,16 @@ export const App = () => {
             Dashboard
           </button>
           {user.role === "admin" && (
-            <button className="nav-button primary-nav" type="button" onClick={() => setActiveView("adminJobs")}>
-              <BriefcaseBusiness size={16} />
-              Add jobs
-            </button>
+            <>
+              <button className="nav-button" type="button" onClick={openSystemHealth}>
+                <Server size={16} />
+                Health
+              </button>
+              <button className="nav-button primary-nav" type="button" onClick={() => setActiveView("adminJobs")}>
+                <BriefcaseBusiness size={16} />
+                Add jobs
+              </button>
+            </>
           )}
           <button className="nav-button" type="button" onClick={openProfile}>
             <UserRound size={16} />
@@ -1534,6 +1734,15 @@ export const App = () => {
         </aside>
 
         <section className="results-column">
+          {activeView === "systemHealth" && user.role === "admin" && (
+            <SystemHealthPanel
+              health={systemHealth}
+              status={systemHealthStatus}
+              error={systemHealthError}
+              onRefresh={() => void loadSystemHealth()}
+            />
+          )}
+
           {activeView === "adminJobs" && user.role === "admin" && (
             <div className="admin-jobs-view">
               <section className="surface-card full admin-job-form-panel">

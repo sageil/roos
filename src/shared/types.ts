@@ -179,3 +179,33 @@ export type UpdateProfileResponse = {
 export type UploadResumeResponse = {
   resume: ResumeVersionRecord;
 };
+
+export type ComponentHealth = {
+  name: string;
+  status: "online" | "degraded" | "offline";
+  details: string;
+  checkedAt: string;
+};
+
+export type AppInstanceHealth = {
+  name: string;
+  url: string;
+  status: "online" | "offline";
+  checkedAt: string;
+  uptimeSeconds?: number;
+  hostname?: string;
+  pid?: number;
+  error?: string;
+};
+
+export type SystemHealthResponse = {
+  ok: boolean;
+  generatedAt: string;
+  components: ComponentHealth[];
+  instances: AppInstanceHealth[];
+  models: {
+    llm: string;
+    embedding: string;
+    llmApiStyle: "responses" | "chat";
+  };
+};

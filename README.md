@@ -11,6 +11,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users have a dedicated login page and profile page.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
+- Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
 - Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
 
@@ -106,9 +107,11 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=ChangeThisAdminPassword123
 ```
 
-Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview` and the admin overview in the UI.
+Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview`, `/api/admin/system-health`, the admin overview, and the System Health page in the UI.
 
 Admins can create reusable job postings from the dedicated Admin Jobs page. Each posting includes required skills as tags. Users and admins can then select a posting when analyzing a resume; the resulting candidate match is linked to that posting and visible in the admin candidate-match overview.
+
+The System Health page probes app instances from the API container using `APP_INSTANCE_URLS`. Docker Compose sets this to the private `app-1` and `app-2` instance health endpoints by default.
 
 Repeated analyses for the same normalized resume text, job title, job description, LLM model, and embedding model reuse the cached structured analysis. Each application still gets its own job row and evidence chunks, but the fit score and recommendation remain consistent for identical inputs.
 

@@ -1,25 +1,28 @@
+x-app-environment: &app-environment
+  HOST: 0.0.0.0
+  PORT: 8787
+  DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/resume_analyzer
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-gpt-5.5}
+  LLM_API_STYLE: ${LLM_API_STYLE:-responses}
+  SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
+  ADMIN_NAME: ${ADMIN_NAME:-Resume Admin}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-not-needed}
+  EMBEDDING_BASE_URL: http://host.docker.internal:1234/v1
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
+  APP_INSTANCE_URLS: ${APP_INSTANCE_URLS:-app-1=http://app-1:8787/api/instance-health,app-2=http://app-2:8787/api/instance-health}
+
 x-app-common: &app-common
   build:
     context: .
   image: resume_analyzer-app
   expose:
     - "8787"
-  environment:
-    HOST: 0.0.0.0
-    PORT: 8787
-    DATABASE_URL: postgres://${APP_DB_USER:?Set APP_DB_USER in .env}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@postgres:5432/resume_analyzer
-    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-    OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
-    LLM_MODEL: ${LLM_MODEL:-gpt-5.5}
-    LLM_API_STYLE: ${LLM_API_STYLE:-responses}
-    SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-604800}
-    ADMIN_NAME: ${ADMIN_NAME:-Resume Admin}
-    ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
-    ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
-    EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-not-needed}
-    EMBEDDING_BASE_URL: http://host.docker.internal:1234/v1
-    EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
-    EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
+  environment: *app-environment
   depends_on:
     postgres:
       condition: service_healthy
@@ -138,9 +141,15 @@ services:
 
   app-1:
     <<: *app-common
+    environment:
+      <<: *app-environment
+      APP_INSTANCE_NAME: app-1
 
   app-2:
     <<: *app-common
+    environment:
+      <<: *app-environment
+      APP_INSTANCE_NAME: app-2
 
   postgres:
     image: pgvector/pgvector:pg17

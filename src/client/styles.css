@@ -853,6 +853,100 @@ h1 {
   overflow: hidden;
 }
 
+.system-health-view {
+  display: grid;
+  gap: 14px;
+}
+
+.health-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.compact-button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.health-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.health-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.health-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.health-card {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-soft);
+}
+
+.health-card > div:first-child {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.health-card strong,
+.health-card p,
+.health-card span,
+.health-card dd {
+  overflow-wrap: anywhere;
+}
+
+.health-card strong {
+  color: var(--foreground);
+}
+
+.health-card p,
+.health-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.health-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.health-details dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.health-details dd {
+  margin: 0;
+}
+
+.compact-empty {
+  min-height: 320px;
+  box-shadow: none;
+}
+
 .analysis-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1405,6 +1499,8 @@ h1 {
   .analysis-grid,
   .empty-grid,
   .admin-grid,
+  .health-summary-grid,
+  .health-card-grid,
   .application-meta-grid,
   .application-analysis-grid,
   .score-breakdown-grid {

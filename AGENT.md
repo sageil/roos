@@ -17,6 +17,7 @@ Use this file as the working contract for AI agents and automation touching this
 
 - Users can register, log in, update profile details, upload resumes, and review their own applications and LLM analysis.
 - Admins have a dedicated jobs page to create job postings, enter required skills as tags, and review postings plus candidate matches.
+- Admins have a System Health page backed by `/api/admin/system-health`; standard users must not be able to access it.
 - Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`; keep postings separate from application/match records.
 - Resume profile uploads are versioned append-only records. Never replace or overwrite an older resume version.
 - Resume analysis chunks uploaded text, creates embeddings, stores vectors in PostgreSQL with pgvector, and ranks evidence for the LLM response.
@@ -30,6 +31,7 @@ Use this file as the working contract for AI agents and automation touching this
 - LM Studio embeddings are expected at host URL `http://127.0.0.1:1234`.
 - Docker reaches LM Studio through `http://host.docker.internal:1234/v1`.
 - Default embedding model: `text-embedding-nomic-embed-text-v1.5-embedding`.
+- Docker sets `APP_INSTANCE_URLS` to probe `app-1` and `app-2`; keep instance health role-agnostic and free of secrets.
 - OpenAI-compatible local providers can use `not-needed` as the API key.
 - If the LLM provider does not support the Responses API, set `LLM_API_STYLE=chat`.
 

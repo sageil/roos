@@ -23,6 +23,8 @@ export const config = {
   embeddingBaseUrl: process.env.EMBEDDING_BASE_URL || process.env.OPENAI_BASE_URL || undefined,
   embeddingModel: process.env.EMBEDDING_MODEL || "text-embedding-3-small",
   embeddingDimensions: optionalNumber(process.env.EMBEDDING_DIMENSIONS),
+  appInstanceName: process.env.APP_INSTANCE_NAME || process.env.HOSTNAME || "local",
+  appInstanceUrls: process.env.APP_INSTANCE_URLS || "",
   maxUploadBytes: 8 * 1024 * 1024,
   sessionTtlSeconds: optionalNumber(process.env.SESSION_TTL_SECONDS) ?? 60 * 60 * 24 * 7,
   adminName: process.env.ADMIN_NAME || "Resume Admin",

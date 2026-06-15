@@ -143,6 +143,12 @@ test.describe.serial("resume analyzer account and profile flows", () => {
       }
     });
     expect(denied.status()).toBe(403);
+    const healthDenied = await request.get("/api/admin/system-health", {
+      headers: {
+        Authorization: `Bearer ${regularSession.token}`
+      }
+    });
+    expect(healthDenied.status()).toBe(403);
 
     await page.goto("/");
     await page.getByPlaceholder("admin@example.com").fill(adminEmail);
@@ -154,6 +160,14 @@ test.describe.serial("resume analyzer account and profile flows", () => {
     await expect(page.getByText(regularEmail)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Job Postings" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Candidate Matches" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Health" }).click();
+    await expect(page.getByRole("heading", { name: "System Health" })).toBeVisible();
+    await expect(page.getByText("PostgreSQL")).toBeVisible();
+    await expect(page.getByText("pgvector")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Application Instances" })).toBeVisible();
+    await expect(page.getByText("app-1", { exact: true })).toBeVisible();
+    await expect(page.getByText("app-2", { exact: true })).toBeVisible();
 
     const postingTitle = `E2E Platform Engineer ${Date.now()}`;
     await page.getByRole("button", { name: "Add jobs" }).click();
