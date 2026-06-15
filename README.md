@@ -36,7 +36,17 @@ ADMIN_PASSWORD=ChangeThisAdminPassword123
 
 ### 2. Choose an AI provider
 
-Roos needs an AI chat model. The default `.env.example` is set up for LM Studio running on your computer at `http://127.0.0.1:1234`.
+Roos needs two AI models:
+
+- A chat model for resume summaries and recommendations.
+- An embedding model for matching resumes, roles, and search results.
+
+The default `.env.example` is set up for LM Studio running on your computer at `http://127.0.0.1:1234`.
+
+In LM Studio, install and load both models before starting Roos:
+
+- `google/gemma-4-e4b`
+- `text-embedding-nomic-embed-text-v1.5-embedding`
 
 For LM Studio with Docker Compose, keep:
 
@@ -45,6 +55,10 @@ OPENAI_API_KEY=not-needed
 OPENAI_BASE_URL=http://host.docker.internal:1234/v1
 LLM_MODEL=google/gemma-4-e4b
 LLM_API_STYLE=chat
+EMBEDDING_API_KEY=not-needed
+EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
+EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5-embedding
+EMBEDDING_DIMENSIONS=768
 ```
 
 For OpenAI, use:
@@ -194,6 +208,8 @@ Most setup is controlled by `.env`.
 | `OPENAI_BASE_URL` | Optional OpenAI-compatible provider URL. |
 | `LLM_MODEL` | Chat model used for application summaries. |
 | `LLM_API_STYLE` | Use `responses` for OpenAI Responses API or `chat` for chat-completions providers. |
+| `EMBEDDING_API_KEY` | API key for the embedding provider. Leave blank to reuse `OPENAI_API_KEY`. |
+| `EMBEDDING_BASE_URL` | Optional embedding provider URL. Leave blank to reuse `OPENAI_BASE_URL`. |
 | `EMBEDDING_MODEL` | Model used to compare resumes, roles, and evidence. |
 | `EMBEDDING_DIMENSIONS` | Vector size for the embedding model. The default is `768`. |
 | `SMTP_*` | Optional email settings for meeting invites. |
@@ -287,7 +303,13 @@ For LM Studio with Docker Compose:
 ```bash
 OPENAI_BASE_URL=http://host.docker.internal:1234/v1
 LLM_API_STYLE=chat
+EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
 ```
+
+Make sure both required LM Studio models are installed and loaded:
+
+- `google/gemma-4-e4b`
+- `text-embedding-nomic-embed-text-v1.5-embedding`
 
 ### PostgreSQL is unhealthy
 

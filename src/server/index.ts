@@ -47,6 +47,13 @@ const upload = multer({
 const minimumResumeTextLength = 80;
 const duplicateApplicationMessage = "Upload a new resume version before applying to this role again.";
 
+const errorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof z.ZodError) {
+    return error.issues[0]?.message ?? fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+};
+
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date in YYYY-MM-DD format.");
 
 const analyzeBodySchema = z.object({
@@ -489,7 +496,7 @@ const runResumeAnalysis = async ({
       }
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const message = errorMessage(error, "Unexpected server error.");
     await failJob(jobId, message);
     throw error;
   }
@@ -675,7 +682,7 @@ app.post("/api/register", async (request, response) => {
 
     response.status(201).json({ user, token });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Registration failed.";
+    const message = errorMessage(error, "Registration failed.");
     const status = message.includes("already exists") ? 409 : 400;
     response.status(status).json({ error: message });
   }
@@ -694,7 +701,7 @@ app.post("/api/login", async (request, response) => {
     const token = await createSession(account.user.id);
     response.json({ user: account.user, token });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Login failed.";
+    const message = errorMessage(error, "Login failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -725,7 +732,7 @@ app.patch("/api/profile", requireAuth, async (request, response) => {
     refreshUserMatchProfileAfterWrite(user.id);
     response.json({ user: updatedUser });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Profile update failed.";
+    const message = errorMessage(error, "Profile update failed.");
     const status = message.includes("already exists") ? 409 : 400;
     response.status(status).json({ error: message });
   }
@@ -754,7 +761,7 @@ app.patch("/api/profile/password", requireAuth, async (request, response) => {
 
     response.json({ updated: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Password update failed.";
+    const message = errorMessage(error, "Password update failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -781,7 +788,7 @@ app.post("/api/resumes/privacy-preview", requireAuth, upload.single("resume"), a
       characterCount: extractedResumeText.length
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Privacy preview failed.";
+    const message = errorMessage(error, "Privacy preview failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -813,7 +820,7 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
     refreshUserMatchProfileAfterWrite(user.id);
     response.status(201).json({ resume, privacyRedaction: resumeUpload.privacyRedaction });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Resume upload failed.";
+    const message = errorMessage(error, "Resume upload failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -874,7 +881,7 @@ app.get("/api/admin/jobs/:jobId/assessment.pdf", requireAuth, requireAdmin, asyn
     );
     response.send(pdf);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Assessment download failed.";
+    const message = errorMessage(error, "Assessment download failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -910,7 +917,7 @@ app.post("/api/admin/jobs/:jobId/meeting-invite", requireAuth, requireAdmin, asy
 
     response.status(202).json({ sent: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Meeting invite failed.";
+    const message = errorMessage(error, "Meeting invite failed.");
     const status = message.includes("Email service is not configured") ? 503 : 400;
     response.status(status).json({ error: message });
   }
@@ -976,7 +983,7 @@ app.patch("/api/admin/settings", requireAuth, requireAdmin, async (request, resp
     const body = appSettingsBodySchema.parse(request.body);
     response.json({ settings: await updateAppSettings(body) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Settings update failed.";
+    const message = errorMessage(error, "Settings update failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -995,7 +1002,7 @@ app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, r
     refreshJobPostingMatchProfileAfterWrite(jobPosting.id);
     response.status(201).json({ jobPosting });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Job posting creation failed.";
+    const message = errorMessage(error, "Job posting creation failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -1066,7 +1073,7 @@ app.post("/api/admin/users/:userId/analyze/latest", requireAuth, requireAdmin, a
       }), admin.role)
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const message = errorMessage(error, "Unexpected server error.");
     const status = message === duplicateApplicationMessage
       ? 409
       : message.includes("OPENAI_API_KEY") || message.includes("API key")
@@ -1100,7 +1107,7 @@ app.patch("/api/admin/jobs/:jobId/convert-to-application", requireAuth, requireA
     const updatedJob = await getJob({ id: jobId, userId: user.id, role: user.role });
     response.json({ job: updatedJob });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Application conversion failed.";
+    const message = errorMessage(error, "Application conversion failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -1134,7 +1141,7 @@ app.patch("/api/admin/jobs/:jobId/interview-questions", requireAuth, requireAdmi
     const updatedJob = await getJob({ id: jobId, userId: user.id, role: user.role });
     response.json({ job: updatedJob });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Interview question update failed.";
+    const message = errorMessage(error, "Interview question update failed.");
     response.status(400).json({ error: message });
   }
 });
@@ -1179,7 +1186,7 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
       }), user.role)
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const message = errorMessage(error, "Unexpected server error.");
     const status = message === duplicateApplicationMessage
       ? 409
       : message.includes("OPENAI_API_KEY") || message.includes("API key")
@@ -1228,7 +1235,7 @@ app.post("/api/analyze/latest", requireAuth, async (request, response) => {
       }), user.role)
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const message = errorMessage(error, "Unexpected server error.");
     const status = message === duplicateApplicationMessage
       ? 409
       : message.includes("OPENAI_API_KEY") || message.includes("API key")
