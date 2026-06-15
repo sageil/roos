@@ -1,4 +1,7 @@
-WITH next_version AS (
+WITH version_lock AS (
+  SELECT pg_advisory_xact_lock(23078788, ($1::bigint % 2147483647)::int)
+),
+next_version AS (
   SELECT COALESCE(MAX(version_number), 0) + 1 AS version_number
   FROM resume_versions
   WHERE user_id = $1
@@ -23,6 +26,7 @@ SELECT
   $6,
   $7
 FROM next_version
+CROSS JOIN version_lock
 RETURNING
   id::int,
   user_id::int,

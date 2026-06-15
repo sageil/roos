@@ -1,14 +1,15 @@
 import OpenAI from "openai";
-import { config, providerApiKey } from "./config.js";
+import type { AppSettings } from "../shared/types.js";
+import { providerApiKey } from "./config.js";
 
-export const createLlmClient = () =>
+export const createLlmClient = (settings: AppSettings) =>
   new OpenAI({
-    apiKey: providerApiKey(config.openaiApiKey, config.openaiBaseUrl),
-    baseURL: config.openaiBaseUrl
+    apiKey: providerApiKey(settings.openaiApiKey, settings.openaiBaseUrl),
+    baseURL: settings.openaiBaseUrl
   });
 
-export const createEmbeddingClient = () =>
+export const createEmbeddingClient = (settings: AppSettings) =>
   new OpenAI({
-    apiKey: providerApiKey(config.embeddingApiKey, config.embeddingBaseUrl),
-    baseURL: config.embeddingBaseUrl
+    apiKey: providerApiKey(settings.embeddingApiKey, settings.embeddingBaseUrl),
+    baseURL: settings.embeddingBaseUrl
   });

@@ -12,6 +12,6 @@ fi
 docker compose exec -T postgres \
   psql \
   -U postgres \
-  -d resume_analyzer \
+  -d roos \
   -v ON_ERROR_STOP=1 \
   -f - < "${sql_file}"

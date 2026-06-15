@@ -7,7 +7,7 @@ INSERT INTO user_match_profiles (
 ) VALUES (
   $1,
   $2,
-  $3::vector(768),
+  $3::vector,
   $4,
   NOW()
 )

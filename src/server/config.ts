@@ -14,7 +14,7 @@ export const config = {
   host: process.env.HOST || "127.0.0.1",
   databaseUrl:
     process.env.DATABASE_URL ||
-    `postgres://${process.env.APP_DB_USER || "resume_app"}:${process.env.APP_DB_PASSWORD || "resume"}@127.0.0.1:5432/resume_analyzer`,
+    `postgres://${process.env.APP_DB_USER || "roos_app"}:${process.env.APP_DB_PASSWORD || "roos"}@127.0.0.1:5432/roos`,
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
   llmModel: process.env.LLM_MODEL || "gpt-5.5",
@@ -27,9 +27,18 @@ export const config = {
   appInstanceUrls: process.env.APP_INSTANCE_URLS || "",
   maxUploadBytes: 8 * 1024 * 1024,
   sessionTtlSeconds: optionalNumber(process.env.SESSION_TTL_SECONDS) ?? 60 * 60 * 24 * 7,
-  adminName: process.env.ADMIN_NAME || "Resume Admin",
+  adminName: process.env.ADMIN_NAME || "Roos Admin",
   adminEmail: process.env.ADMIN_EMAIL || "admin@example.com",
-  adminPassword: process.env.ADMIN_PASSWORD
+  adminPassword: process.env.ADMIN_PASSWORD,
+  email: {
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: optionalNumber(process.env.SMTP_PORT) ?? 587,
+    smtpSecure: process.env.SMTP_SECURE === "true",
+    smtpUser: process.env.SMTP_USER,
+    smtpPass: process.env.SMTP_PASS,
+    from: process.env.EMAIL_FROM || process.env.SMTP_USER,
+    fromName: process.env.EMAIL_FROM_NAME || process.env.ADMIN_NAME || "Roos Admin"
+  }
 } as const;
 
 export const providerApiKey = (apiKey: string | undefined, baseUrl: string | undefined): string => {

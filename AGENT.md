@@ -85,7 +85,7 @@ The containerized commands should be preferred when validating changes for hando
 - Keep coverage thresholds meaningful. Do not lower thresholds to hide untested behavior.
 - Mock PostgreSQL for unit tests; use Docker Compose for full app/E2E validation.
 - Add E2E coverage for user-visible auth, profile, resume upload/versioning, admin, health, and application flows.
-- Docker E2E should target the HTTPS Nginx proxy alias `resume-analyzer-web`, not an individual app instance.
+- Docker E2E should target the HTTPS Nginx proxy alias `roos-web`, not an individual app instance.
 
 ## UI Notes
 

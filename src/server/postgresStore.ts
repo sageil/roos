@@ -8,11 +8,13 @@ import { toPgVectorLiteral } from "./vector.js";
 export { checkPostgres };
 
 type JobStatus = "running" | "completed" | "failed";
+export type JobAnalysisKind = "application" | "candidate_assessment";
 
 type JobRow = {
   id: number;
   user_id: number | null;
   job_posting_id: number | null;
+  analysis_kind?: JobAnalysisKind | null;
   job_posting_title: string | null;
   user_name: string | null;
   user_email: string | null;
@@ -28,8 +30,6 @@ type JobRow = {
   fit_level: "low" | "medium" | "high" | null;
   analysis_json: ResumeAnalysis | string | null;
   error_message: string | null;
-  llm_model: string | null;
-  embedding_model: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +43,10 @@ type EvidenceRow = {
 type JobMatchRow = {
   job_id: number;
   score: number;
+};
+
+type ExistsRow = {
+  exists: boolean;
 };
 
 type AnalysisCacheRow = {
@@ -89,6 +93,7 @@ const mapRow = (row: JobRow): JobRecord => ({
   id: row.id,
   userId: row.user_id ?? undefined,
   jobPostingId: row.job_posting_id ?? undefined,
+  analysisKind: row.analysis_kind ?? "application",
   jobPostingTitle: row.job_posting_title ?? undefined,
   userName: row.user_name ?? undefined,
   userEmail: row.user_email ?? undefined,
@@ -104,8 +109,6 @@ const mapRow = (row: JobRow): JobRecord => ({
   fitScore: row.fit_score ?? undefined,
   fitLevel: row.fit_level ?? undefined,
   errorMessage: row.error_message ?? undefined,
-  llmModel: row.llm_model ?? undefined,
-  embeddingModel: row.embedding_model ?? undefined,
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -141,7 +144,8 @@ export const createJob = async ({
   jobTitle,
   jobDescription,
   resumeFileName,
-  characterCount
+  characterCount,
+  analysisKind = "application"
 }: {
   userId: number;
   jobPostingId?: number;
@@ -150,6 +154,7 @@ export const createJob = async ({
   jobDescription?: string;
   resumeFileName: string;
   characterCount: number;
+  analysisKind?: JobAnalysisKind;
 }): Promise<number> =>
   withPostgres(async () => {
     const result = await queryPostgres<{ id: string }>(
@@ -157,6 +162,7 @@ export const createJob = async ({
       [
         userId,
         jobPostingId ?? null,
+        analysisKind,
         applicationDate,
         jobTitle,
         jobDescription || null,
@@ -179,11 +185,15 @@ const buildRecommendation = (analysis: ResumeAnalysis): string => {
 export const completeJob = async ({
   id,
   analysis,
-  chunkCount
+  chunkCount,
+  llmModel = config.llmModel,
+  embeddingModel = config.embeddingModel
 }: {
   id: number;
   analysis: ResumeAnalysis;
   chunkCount: number;
+  llmModel?: string;
+  embeddingModel?: string;
 }) =>
   withPostgres(async () => {
     await queryPostgres(
@@ -194,8 +204,8 @@ export const completeJob = async ({
         analysis.fitScore,
         analysis.fitLevel,
         JSON.stringify(analysis),
-        config.llmModel,
-        config.embeddingModel,
+        llmModel,
+        embeddingModel,
         id
       ]
     );
@@ -204,6 +214,27 @@ export const completeJob = async ({
 export const failJob = async (id: number, message: string) =>
   withPostgres(async () => {
     await queryPostgres(queries.jobs.fail, [message, id]);
+  });
+
+export const convertJobToApplication = async (id: number) =>
+  withPostgres(async () => {
+    await queryPostgres(queries.jobs.convertToApplication, [id]);
+  });
+
+export const hasJobForUserPosting = async ({
+  userId,
+  jobPostingId
+}: {
+  userId: number;
+  jobPostingId: number;
+}): Promise<boolean> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<ExistsRow>(
+      queries.jobs.existsForUserPosting,
+      [userId, jobPostingId]
+    );
+
+    return result.rows[0]?.exists ?? false;
   });
 
 export const updateJobInterviewQuestions = async ({
@@ -223,29 +254,33 @@ export const updateJobInterviewQuestions = async ({
 export const listJobs = async ({
   userId,
   role,
-  limit = 20
+  limit = 20,
+  offset = 0
 }: {
   userId: number;
   role: "user" | "admin";
   limit?: number;
+  offset?: number;
 }): Promise<JobRecord[]> =>
   withPostgres(async () => {
     const result = role === "admin"
-      ? await queryPostgres<JobRow>(queries.jobs.listAll, [limit])
-      : await queryPostgres<JobRow>(queries.jobs.listForUser, [userId, limit]);
+      ? await queryPostgres<JobRow>(queries.jobs.listAll, [limit, offset])
+      : await queryPostgres<JobRow>(queries.jobs.listForUser, [userId, limit, offset]);
 
     return result.rows.map(mapRow);
   });
 
 export const listJobsForPosting = async ({
   jobPostingId,
-  limit = 100
+  limit = 100,
+  offset = 0
 }: {
   jobPostingId: number;
   limit?: number;
+  offset?: number;
 }): Promise<JobRecord[]> =>
   withPostgres(async () => {
-    const result = await queryPostgres<JobRow>(queries.jobs.listForPosting, [jobPostingId, limit]);
+    const result = await queryPostgres<JobRow>(queries.jobs.listForPosting, [jobPostingId, limit, offset]);
     return result.rows.map(mapRow);
   });
 
@@ -254,13 +289,15 @@ export const searchJobs = async ({
   role,
   search = "",
   semanticJobIds = [],
-  limit = 100
+  limit = 100,
+  offset = 0
 }: {
   userId: number;
   role: "user" | "admin";
   search?: string;
   semanticJobIds?: number[];
   limit?: number;
+  offset?: number;
 }): Promise<JobRecord[]> =>
   withPostgres(async () => {
     const result = await queryPostgres<JobRow>(queries.jobs.search, [
@@ -268,7 +305,8 @@ export const searchJobs = async ({
       userId,
       search.trim(),
       semanticJobIds,
-      limit
+      limit,
+      offset
     ]);
 
     return result.rows.map(mapRow);
@@ -297,32 +335,40 @@ export const storeResumeChunks = async ({
   applicationDate,
   jobTitle,
   chunks,
-  embeddings
+  embeddings,
+  embeddingModel = config.embeddingModel
 }: {
   jobId: number;
   applicationDate: string;
   jobTitle: string;
   chunks: TextChunk[];
   embeddings: number[][];
+  embeddingModel?: string;
 }) =>
   withPostgres(async () => {
+    if (chunks.length !== embeddings.length) {
+      throw new Error("Chunk and embedding counts must match before storing resume evidence.");
+    }
+
+    if (chunks.length === 0) {
+      return;
+    }
+
     const client = await connectPostgres();
     try {
       await client.query(queries.transactions.begin);
-      for (const [index, chunk] of chunks.entries()) {
-        await client.query(
-          queries.resumeChunks.upsert,
-          [
-            jobId,
-            chunk.id,
-            chunk.text,
-            toPgVectorLiteral(embeddings[index]),
-            applicationDate,
-            jobTitle,
-            config.embeddingModel
-          ]
-        );
-      }
+      await client.query(
+        queries.resumeChunks.upsertMany,
+        [
+          jobId,
+          chunks.map((chunk) => chunk.id),
+          chunks.map((chunk) => chunk.text),
+          embeddings.map(toPgVectorLiteral),
+          applicationDate,
+          jobTitle,
+          embeddingModel
+        ]
+      );
       await client.query(queries.transactions.commit);
     } catch (error) {
       await client.query(queries.transactions.rollback);
@@ -358,17 +404,19 @@ export const queryMatchingJobIds = async ({
   queryEmbedding,
   userId,
   role,
-  nResults
+  nResults,
+  embeddingModel = config.embeddingModel
 }: {
   queryEmbedding: number[];
   userId: number;
   role: "user" | "admin";
   nResults: number;
+  embeddingModel?: string;
 }): Promise<{ jobId: number; score: number }[]> =>
   withPostgres(async () => {
     const result = await queryPostgres<JobMatchRow>(
       queries.resumeChunks.matchJobs,
-      [toPgVectorLiteral(queryEmbedding), config.embeddingModel, role, userId, nResults]
+      [toPgVectorLiteral(queryEmbedding), embeddingModel, role, userId, nResults]
     );
 
     return result.rows.map((row) => ({
@@ -388,21 +436,25 @@ export const upsertCachedAnalysis = async ({
   resumeHash,
   jobProfileHash,
   analysis,
-  chunkCount
+  chunkCount,
+  llmModel = config.llmModel,
+  embeddingModel = config.embeddingModel
 }: {
   cacheKey: string;
   resumeHash: string;
   jobProfileHash: string;
   analysis: ResumeAnalysis;
   chunkCount: number;
+  llmModel?: string;
+  embeddingModel?: string;
 }) =>
   withPostgres(async () => {
     await queryPostgres(queries.analysisCache.upsert, [
       cacheKey,
       resumeHash,
       jobProfileHash,
-      config.llmModel,
-      config.embeddingModel,
+      llmModel,
+      embeddingModel,
       JSON.stringify(analysis),
       chunkCount
     ]);

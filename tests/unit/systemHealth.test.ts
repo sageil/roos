@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { checkPostgres } = vi.hoisted(() => ({
-  checkPostgres: vi.fn()
+const { checkPostgres, getEffectiveAppSettings } = vi.hoisted(() => ({
+  checkPostgres: vi.fn(),
+  getEffectiveAppSettings: vi.fn()
 }));
 
 vi.mock("../../src/server/config.js", () => ({
@@ -21,6 +22,10 @@ vi.mock("../../src/server/config.js", () => ({
 
 vi.mock("../../src/server/postgresStore.js", () => ({
   checkPostgres
+}));
+
+vi.mock("../../src/server/appSettingsStore.js", () => ({
+  getEffectiveAppSettings
 }));
 
 import { buildSystemHealth, parseInstanceTargets } from "../../src/server/systemHealth.js";
@@ -45,8 +50,22 @@ describe("parseInstanceTargets", () => {
 describe("buildSystemHealth", () => {
   beforeEach(() => {
     checkPostgres.mockReset();
+    getEffectiveAppSettings.mockReset();
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
+    getEffectiveAppSettings.mockResolvedValue({
+      openaiApiKey: undefined,
+      openaiBaseUrl: "http://host.docker.internal:1234/v1",
+      llmModel: "local-llm",
+      llmApiStyle: "chat",
+      embeddingApiKey: "not-needed",
+      embeddingBaseUrl: "http://host.docker.internal:1234/v1",
+      embeddingModel: "embedding-model",
+      embeddingDimensions: 768,
+      smtpPort: 587,
+      smtpSecure: false,
+      emailFromName: "Roos Admin"
+    });
   });
 
   it("reports online components and app instances", async () => {

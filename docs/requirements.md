@@ -2,13 +2,14 @@
 
 ## Purpose
 
-Resume Analyzer helps users compare resumes against job profiles and gives admins a structured view of job postings, candidate matches, and system status.
+Roos helps users compare resumes against job profiles and gives admins a structured view of job postings, candidate matches, and system status.
 
 ## User Accounts
 
 - Users can register, log in, update profile details, upload resumes, and review their own applications and LLM analysis.
 - Admins can access global user, job posting, application, candidate match, and system health views.
 - Standard users must not be able to access admin APIs or admin-only UI pages.
+- Users can switch between available UI themes, and the selected theme should persist locally for that browser.
 
 ## Resume Management
 
@@ -28,12 +29,25 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 - Job search must support meaning-based role discovery with embeddings stored in PostgreSQL and queried through pgvector IVFFlat indexes.
 - Admins have a dedicated users page to search users by name, email, resume filename, job history, posting skills, and stored match evidence.
 - Admin user search must support meaning-based skill/profile matching with embeddings stored in PostgreSQL and queried through pgvector IVFFlat indexes.
+- Admin user search must rank stronger text matches, such as profile, title, skill, and evidence matches, ahead of broad semantic matches.
 - Admins can review each user's latest resume metadata, matched terms, and recent applied jobs from the users page.
 - Resume analyses can be linked to `job_postings` through `jobs.job_posting_id`.
 - Job postings must stay separate from application and match records.
 - Users and admins can select an active posting when analyzing a resume.
+- Admins can assess a stored candidate resume against a selected job posting without creating a user-visible application.
+- Candidate assessments must not appear in a standard user's submitted applications unless an admin explicitly converts the assessment to an application.
+- Admins must not be shown candidates already assessed for the selected posting in the candidate picker.
 - Users can review their own applied jobs and expand application details from the profile page.
 - Admins can view all job postings, users, applications, and candidate matches.
+- Page-level entity lists must initially render 10 records and load additional records as the user scrolls.
+- Paginated lists must support users, applications, job postings, selected posting applications, and admin job-posting lists.
+
+## UI Themes
+
+- The default theme is `Launch`.
+- Additional supported themes are `Icy Blue` and `Crimson Lit`.
+- Themes should be implemented through shared CSS variables so controls, cards, badges, modals, and list states stay visually consistent.
+- The theme selector should be available in the header and placed before sign out for authenticated users.
 
 ## Resume Analysis
 
@@ -55,3 +69,10 @@ Resume Analyzer helps users compare resumes against job profiles and gives admin
 - Sessions store hashed bearer tokens only.
 - Passwords are hashed with scrypt.
 - Do not expose secrets, bearer tokens, raw provider API keys, generated TLS material, or unredacted resume text.
+
+## Demo Data
+
+- Demo data must be Australian.
+- The demo seed should provide at least 100 demo users.
+- The demo seed should provide at least 200 job postings across varied fields including software, veterinary, veterinary technician, lab technician, accounting, office administration, and related veterinary-sector roles.
+- Demo seeding should be idempotent and replace only rows owned by the demo seed.

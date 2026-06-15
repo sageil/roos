@@ -1,6 +1,7 @@
 INSERT INTO jobs (
   user_id,
   job_posting_id,
+  analysis_kind,
   status,
   application_date,
   job_title,
@@ -8,5 +9,5 @@ INSERT INTO jobs (
   resume_file_name,
   character_count
 )
-VALUES ($1, $2, 'running', $3, $4, $5, $6, $7)
+VALUES ($1, $2, $3, 'running', $4, $5, $6, $7, $8)
 RETURNING id;

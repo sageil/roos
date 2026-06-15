@@ -97,7 +97,8 @@ describe("jobPostingStore", () => {
       true,
       "client intake",
       [4, 8],
-      25
+      25,
+      0
     ]);
   });
 

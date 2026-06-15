@@ -13,9 +13,106 @@ LEFT JOIN LATERAL (
   SELECT array_position($2::bigint[], u.id) AS rank
 ) semantic_match ON true
 LEFT JOIN LATERAL (
+  SELECT MIN(rank) AS rank
+  FROM (
+    SELECT 0 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND (
+        u.name ILIKE $1 || '%'
+        OR u.email ILIKE $1 || '%'
+      )
+
+    UNION ALL
+
+    SELECT 1 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND j.job_title ILIKE $1 || '%'
+      )
+
+    UNION ALL
+
+    SELECT 2 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND (
+            j.job_title ILIKE '% ' || $1 || '%'
+            OR j.job_title ILIKE '%-' || $1 || '%'
+            OR j.job_title ILIKE '%/' || $1 || '%'
+          )
+      )
+
+    UNION ALL
+
+    SELECT 3 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND j.job_title ILIKE '%' || $1 || '%'
+      )
+
+    UNION ALL
+
+    SELECT 4 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        JOIN job_postings jp ON jp.id = j.job_posting_id
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND (
+            immutable_text_array_to_string(jp.skills, ' ') ILIKE $1 || '%'
+            OR immutable_text_array_to_string(jp.skills, ' ') ILIKE '% ' || $1 || '%'
+          )
+      )
+
+    UNION ALL
+
+    SELECT 5 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        JOIN job_postings jp ON jp.id = j.job_posting_id
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND immutable_text_array_to_string(jp.skills, ' ') ILIKE '%' || $1 || '%'
+      )
+
+    UNION ALL
+
+    SELECT 6 AS rank
+    WHERE COALESCE($1::text, '') <> ''
+      AND EXISTS (
+        SELECT 1
+        FROM jobs j
+        WHERE j.user_id = u.id
+          AND j.analysis_kind = 'application'
+          AND (
+            COALESCE(j.job_description, '') ILIKE '%' || $1 || '%'
+            OR COALESCE(j.llm_recommendation, '') ILIKE '%' || $1 || '%'
+            OR COALESCE(j.analysis_json::text, '') ILIKE '%' || $1 || '%'
+          )
+      )
+  ) ranked_matches
+) text_match ON true
+LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS application_count
   FROM jobs j
   WHERE j.user_id = u.id
+    AND j.analysis_kind = 'application'
 ) job_counts ON true
 LEFT JOIN LATERAL (
   SELECT jsonb_build_object(
@@ -39,6 +136,7 @@ LEFT JOIN LATERAL (
       'id', recent.id::int,
       'userId', recent.user_id::int,
       'jobPostingId', recent.job_posting_id::int,
+      'analysisKind', recent.analysis_kind,
       'jobPostingTitle', recent.job_posting_title,
       'userName', u.name,
       'userEmail', u.email,
@@ -54,8 +152,6 @@ LEFT JOIN LATERAL (
       'fitScore', recent.fit_score,
       'fitLevel', recent.fit_level,
       'errorMessage', recent.error_message,
-      'llmModel', recent.llm_model,
-      'embeddingModel', recent.embedding_model,
       'createdAt', recent.created_at::text,
       'updatedAt', recent.updated_at::text
     )
@@ -63,11 +159,29 @@ LEFT JOIN LATERAL (
   ) AS jobs_json
   FROM (
     SELECT
-      j.*,
+      j.id,
+      j.user_id,
+      j.job_posting_id,
+      j.analysis_kind,
+      j.status,
+      j.application_date,
+      j.job_title,
+      j.job_description,
+      j.resume_file_name,
+      j.character_count,
+      j.chunk_count,
+      j.llm_recommendation,
+      j.analysis_json,
+      j.fit_score,
+      j.fit_level,
+      j.error_message,
+      j.created_at,
+      j.updated_at,
       jp.title AS job_posting_title
     FROM jobs j
     LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
     WHERE j.user_id = u.id
+      AND j.analysis_kind = 'application'
     ORDER BY j.created_at DESC, j.id DESC
     LIMIT 5
   ) recent
@@ -79,47 +193,63 @@ LEFT JOIN LATERAL (
     FROM jobs j
     JOIN job_postings jp ON jp.id = j.job_posting_id
     WHERE j.user_id = u.id
+      AND j.analysis_kind = 'application'
 
     UNION ALL
 
     SELECT jsonb_array_elements_text(j.analysis_json->'suggestedKeywords') AS term
     FROM jobs j
     WHERE j.user_id = u.id
+      AND j.analysis_kind = 'application'
       AND jsonb_typeof(j.analysis_json->'suggestedKeywords') = 'array'
   ) raw_terms
   WHERE trim(term) <> ''
 ) matched_terms ON true
 WHERE
-  COALESCE($1::text, '') = ''
-  OR u.id = ANY($2::bigint[])
-  OR u.name ILIKE '%' || $1 || '%'
-  OR u.email ILIKE '%' || $1 || '%'
-  OR EXISTS (
-    SELECT 1
-    FROM resume_versions rv
-    WHERE rv.user_id = u.id
-      AND rv.file_name ILIKE '%' || $1 || '%'
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM jobs j
-    LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
-    WHERE j.user_id = u.id
-      AND (
-        j.job_title ILIKE '%' || $1 || '%'
-        OR COALESCE(j.job_description, '') ILIKE '%' || $1 || '%'
-        OR COALESCE(j.llm_recommendation, '') ILIKE '%' || $1 || '%'
-        OR COALESCE(j.analysis_json::text, '') ILIKE '%' || $1 || '%'
-        OR EXISTS (
-          SELECT 1
-          FROM unnest(COALESCE(jp.skills, ARRAY[]::text[])) skill
-          WHERE skill ILIKE '%' || $1 || '%'
+  (
+    COALESCE($1::text, '') = ''
+    OR u.id = ANY($2::bigint[])
+    OR u.name ILIKE '%' || $1 || '%'
+    OR u.email ILIKE '%' || $1 || '%'
+    OR EXISTS (
+      SELECT 1
+      FROM resume_versions rv
+      WHERE rv.user_id = u.id
+        AND rv.file_name ILIKE '%' || $1 || '%'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM jobs j
+      LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
+      WHERE j.user_id = u.id
+        AND j.analysis_kind = 'application'
+        AND (
+          j.job_title ILIKE '%' || $1 || '%'
+          OR COALESCE(j.job_description, '') ILIKE '%' || $1 || '%'
+          OR COALESCE(j.llm_recommendation, '') ILIKE '%' || $1 || '%'
+          OR COALESCE(j.analysis_json::text, '') ILIKE '%' || $1 || '%'
+          OR immutable_text_array_to_string(jp.skills, ' ') ILIKE '%' || $1 || '%'
         )
-      )
+    )
+  )
+  AND (
+    $4::bigint IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM jobs assessed
+      WHERE assessed.user_id = u.id
+        AND assessed.job_posting_id = $4::bigint
+        AND assessed.status <> 'failed'
+    )
   )
 ORDER BY
+  CASE
+    WHEN COALESCE($1::text, '') = '' THEN 0
+    ELSE COALESCE(text_match.rank, 50)
+  END,
   CASE WHEN semantic_match.rank IS NULL THEN 1 ELSE 0 END,
   semantic_match.rank NULLS LAST,
   u.created_at DESC,
   u.id DESC
-LIMIT $3;
+LIMIT $3
+OFFSET $5;

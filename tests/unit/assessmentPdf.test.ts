@@ -60,8 +60,6 @@ const job: JobRecord = {
   analysis,
   fitScore: 84,
   fitLevel: "high",
-  llmModel: "local-llm",
-  embeddingModel: "embedding-model",
   createdAt: "2026-06-14T12:00:00.000Z",
   updatedAt: "2026-06-14T12:05:00.000Z"
 };
@@ -73,7 +71,7 @@ describe("assessmentPdf", () => {
 
     expect(pdf.length).toBeGreaterThan(1000);
     expect(text.startsWith("%PDF-1.4")).toBe(true);
-    expect(text).toContain("Resume Analyzer LLM Assessment");
+    expect(text).toContain("Roos LLM Assessment");
     expect(text).toContain("Strong fit for veterinary technician support.");
     expect(text).toContain("startxref");
   });

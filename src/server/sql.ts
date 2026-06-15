@@ -18,7 +18,9 @@ export const queries = {
   },
   jobs: {
     create: loadSql("jobs", "create.sql"),
+    convertToApplication: loadSql("jobs", "convert_to_application.sql"),
     complete: loadSql("jobs", "complete.sql"),
+    existsForUserPosting: loadSql("jobs", "exists_for_user_posting.sql"),
     fail: loadSql("jobs", "fail.sql"),
     list: loadSql("jobs", "list.sql"),
     listAll: loadSql("jobs", "list_all.sql"),
@@ -40,6 +42,7 @@ export const queries = {
   },
   users: {
     create: loadSql("users", "create.sql"),
+    findById: loadSql("users", "find_by_id.sql"),
     findByEmail: loadSql("users", "find_by_email.sql"),
     list: loadSql("users", "list.sql"),
     listAdminDetails: loadSql("users", "list_admin_details.sql"),
@@ -61,12 +64,17 @@ export const queries = {
   admin: {
     stats: loadSql("admin", "stats.sql")
   },
+  appSettings: {
+    get: loadSql("app_settings", "get.sql"),
+    upsert: loadSql("app_settings", "upsert.sql")
+  },
   analysisCache: {
     get: loadSql("analysis_cache", "get.sql"),
     upsert: loadSql("analysis_cache", "upsert.sql")
   },
   resumeChunks: {
     upsert: loadSql("resume_chunks", "upsert.sql"),
+    upsertMany: loadSql("resume_chunks", "upsert_many.sql"),
     match: loadSql("resume_chunks", "match.sql"),
     matchJobs: loadSql("resume_chunks", "match_jobs.sql")
   },

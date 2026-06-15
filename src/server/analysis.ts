@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import type { EvidenceChunk, ResumeAnalysis } from "../shared/types.js";
+import type { AppSettings, EvidenceChunk, ResumeAnalysis } from "../shared/types.js";
+import { getEffectiveAppSettings } from "./appSettingsStore.js";
 import { chunkResumeText } from "./chunking.js";
-import { config } from "./config.js";
 import { cosineSimilarity, createEmbeddings } from "./embeddings.js";
 import { createLlmClient } from "./openaiClients.js";
 import { getCachedAnalysis, queryJobEvidence, storeResumeChunks, upsertCachedAnalysis } from "./postgresStore.js";
@@ -153,6 +153,7 @@ const sha256 = (value: string): string =>
 const buildAnalysisCacheIdentity = (
   resumeText: string,
   jobTitle: string,
+  settings: AppSettings,
   jobDescription?: string
 ) => {
   const resumeHash = sha256(normalizeForCache(resumeText));
@@ -167,8 +168,8 @@ const buildAnalysisCacheIdentity = (
       resumeHash,
       jobProfileHash,
       analysisCacheVersion,
-      llmModel: config.llmModel,
-      embeddingModel: config.embeddingModel
+      llmModel: settings.llmModel,
+      embeddingModel: settings.embeddingModel
     })
   );
 
@@ -188,6 +189,7 @@ const rankEvidence = async (
   applicationDate: string,
   resumeText: string,
   jobTitle: string,
+  settings: AppSettings,
   jobDescription?: string
 ): Promise<{ evidence: EvidenceChunk[]; chunkCount: number }> => {
   const chunks = chunkResumeText(resumeText);
@@ -195,7 +197,7 @@ const rankEvidence = async (
     throw new Error("No readable resume text was found.");
   }
 
-  const embeddings = await createEmbeddings([buildSearchQuery(jobTitle, jobDescription), ...chunks.map((chunk) => chunk.text)]);
+  const embeddings = await createEmbeddings([buildSearchQuery(jobTitle, jobDescription), ...chunks.map((chunk) => chunk.text)], settings);
   const queryEmbedding = embeddings[0];
   const chunkEmbeddings = embeddings.slice(1);
 
@@ -204,7 +206,8 @@ const rankEvidence = async (
     applicationDate,
     jobTitle,
     chunks,
-    embeddings: chunkEmbeddings
+    embeddings: chunkEmbeddings,
+    embeddingModel: settings.embeddingModel
   });
 
   const evidenceFromPostgres = await queryJobEvidence({
@@ -277,10 +280,10 @@ requirementAssessments: array of requirement assessments with category, requirem
 scoreBreakdown: object with minimumQualifications, roleCompetencies, domainExperience, preferredQualifications, seniorityScope, and evidenceQuality scores from 0 to 100
 fairnessReview: object with ignoredFactors and notes explaining which non-job-related factors were ignored`;
 
-const analyzeWithResponsesApi = async (prompt: string): Promise<string> => {
-  const client = createLlmClient();
+const analyzeWithResponsesApi = async (prompt: string, settings: AppSettings): Promise<string> => {
+  const client = createLlmClient(settings);
   const response = await client.responses.create({
-    model: config.llmModel,
+    model: settings.llmModel,
     instructions: systemPrompt,
     input: prompt,
     temperature: 0,
@@ -290,10 +293,10 @@ const analyzeWithResponsesApi = async (prompt: string): Promise<string> => {
   return response.output_text;
 };
 
-const analyzeWithChatCompletions = async (prompt: string): Promise<string> => {
-  const client = createLlmClient();
+const analyzeWithChatCompletions = async (prompt: string, settings: AppSettings): Promise<string> => {
+  const client = createLlmClient(settings);
   const response = await client.chat.completions.create({
-    model: config.llmModel,
+    model: settings.llmModel,
     temperature: 0,
     top_p: 1,
     response_format: analysisResponseFormat,
@@ -428,16 +431,19 @@ export const analyzeResume = async (
   applicationDate: string,
   resumeText: string,
   jobTitle: string,
-  jobDescription?: string
+  jobDescription?: string,
+  suppliedSettings?: AppSettings
 ): Promise<{ analysis: ResumeAnalysis; chunkCount: number }> => {
+  const settings = suppliedSettings ?? await getEffectiveAppSettings();
   const { evidence, chunkCount } = await rankEvidence(
     jobId,
     applicationDate,
     resumeText,
     jobTitle,
+    settings,
     jobDescription
   );
-  const cacheIdentity = buildAnalysisCacheIdentity(resumeText, jobTitle, jobDescription);
+  const cacheIdentity = buildAnalysisCacheIdentity(resumeText, jobTitle, settings, jobDescription);
   const cached = await getCachedAnalysis(cacheIdentity.cacheKey);
   if (cached) {
     return {
@@ -448,16 +454,18 @@ export const analyzeResume = async (
 
   const prompt = userPrompt(jobTitle, jobDescription, resumeText, evidence);
   const text =
-    config.llmApiStyle === "chat"
-      ? await analyzeWithChatCompletions(prompt)
-      : await analyzeWithResponsesApi(prompt);
+    settings.llmApiStyle === "chat"
+      ? await analyzeWithChatCompletions(prompt, settings)
+      : await analyzeWithResponsesApi(prompt, settings);
   const parsed = analysisSchema.parse(extractJson(text));
   const analysis = normalizeAnalysis(parsed, evidence);
 
   await upsertCachedAnalysis({
     ...cacheIdentity,
     analysis,
-    chunkCount
+    chunkCount,
+    llmModel: settings.llmModel,
+    embeddingModel: settings.embeddingModel
   });
 
   return {

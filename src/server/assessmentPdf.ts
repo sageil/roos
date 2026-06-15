@@ -124,15 +124,13 @@ export const buildAssessmentPdf = (job: JobRecord): Buffer => {
   }
 
   const lines: PdfTextLine[] = [
-    { text: "Resume Analyzer LLM Assessment", size: 18, bold: true },
+    { text: "Roos LLM Assessment", size: 18, bold: true },
     { text: `Application: ${job.jobTitle}`, size: 13, bold: true },
     { text: `Candidate: ${job.userName ?? "Candidate"}${job.userEmail ? ` <${job.userEmail}>` : ""}` },
     { text: `Date: ${job.applicationDate}` },
     { text: `Status: ${job.status}` },
     { text: `Fit: ${analysis.fitLevel} (${analysis.fitScore}/100)` },
     { text: `Posting: ${job.jobPostingTitle ?? "Custom job profile"}` },
-    { text: `LLM model: ${job.llmModel ?? "Not recorded"}` },
-    { text: `Embedding model: ${job.embeddingModel ?? "Not recorded"}` },
     ...section("LLM Recommendation", [{ text: job.llmRecommendation || analysis.candidateSummary }]),
     ...analysisLines(analysis),
     ...(job.jobDescription

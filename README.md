@@ -1,6 +1,6 @@
-# Resume Analyzer
+# Roos
 
-A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI text analysis, and configurable OpenAI-compatible embedding models.
+Roos is a TypeScript resume analysis app with a React front end, Node/Express API, OpenAI text analysis, and configurable OpenAI-compatible embedding models.
 
 ## Project Docs
 
@@ -16,13 +16,16 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users can review their own resumes, applied jobs, LLM match analysis, evidence, and recommendations.
 - Users have a dedicated login page and profile page.
 - Users have a dedicated jobs page to search roles by exact text and semantic meaning before matching a resume.
+- Applications, jobs, users, posting applications, and admin job-posting lists load 10 records at a time and append the next page when the user scrolls.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
 - Users can download their versioned resume uploads in the same file format they uploaded.
 - Resume uploads ask users to confirm personal identifiers and redact them before storage, embedding, cache lookup, or LLM analysis.
-- Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
-- Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles.
+- Admins have a dedicated jobs page to create postings, enter required skills as tags, review candidate matches, and assess stored candidate resumes against a selected posting.
+- Admin candidate assessments are hidden from candidate-facing application history until an admin explicitly converts the assessment to an application.
+- Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles, with text relevance used ahead of broad semantic matches.
 - Admins can download user profile resume versions in the same file format the user uploaded.
 - Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
+- Users can switch UI themes between Launch, Icy Blue, and Crimson Lit; the selected theme is saved in browser local storage.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
 - Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
 
@@ -73,7 +76,7 @@ When the app instances run in Docker, they connect to:
 ```bash
 APP_DB_USER=<set in .env>
 APP_DB_PASSWORD=<set in .env>
-DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@postgres:5432/resume_analyzer
+DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@postgres:5432/roos
 EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
 ```
 
@@ -96,7 +99,7 @@ For local development outside Docker, run PostgreSQL with pgvector and set:
 ```bash
 APP_DB_USER=<set in .env>
 APP_DB_PASSWORD=<set in .env>
-DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@127.0.0.1:5432/resume_analyzer
+DATABASE_URL=postgres://<APP_DB_USER>:<APP_DB_PASSWORD>@127.0.0.1:5432/roos
 ```
 
 The app creates the `vector` extension and required tables on startup.
@@ -117,14 +120,38 @@ Database SQL is kept outside the TypeScript store:
 Admin seeding is controlled by:
 
 ```bash
-ADMIN_NAME=Resume Admin
+ADMIN_NAME=Roos Admin
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=ChangeThisAdminPassword123
 ```
 
 Regular registrations create `user` accounts. The seeded admin account can access `/api/admin/overview`, `/api/admin/system-health`, the admin overview, and the System Health page in the UI.
 
-Admins can create reusable job postings from the dedicated Admin Jobs page. Each posting includes required skills as tags. Users and admins can then select a posting when analyzing a resume; the resulting candidate match is linked to that posting and visible in the admin candidate-match overview.
+Admins can create reusable job postings from the dedicated Admin Jobs page. Each posting includes required skills as tags. Users can apply to an active posting with their latest resume, and admins can review linked applications from the Applications and Jobs views.
+
+Admin role assessment has a separate candidate-assessment path. From the Jobs page, admins choose **Assess a candidate**, search stored users by name, and analyze the selected candidate's latest resume against the posting. These records are stored as `jobs.analysis_kind = 'candidate_assessment'` and are not visible as user-submitted applications. Admins can convert a candidate assessment to a normal application later if it should become part of the candidate's application history.
+
+Admins can schedule a meeting from an expanded application card. The server sends a plain-text email with an attached calendar invite (`text/calendar`) through a configured SMTP service. For Gmail, use an app password for `SMTP_PASS`.
+
+```bash
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-account@gmail.com
+SMTP_PASS=<gmail-app-password>
+EMAIL_FROM=your-account@gmail.com
+EMAIL_FROM_NAME=Roos Admin
+```
+
+List pages use offset pagination. The API accepts `limit` and `offset` query parameters on page-facing list endpoints and the UI requests `limit=10`, then appends the next 10 records when the scroll sentinel comes into view. This keeps seeded or production-sized user, application, and posting lists from rendering all records at once.
+
+The theme control cycles through three CSS-variable themes:
+
+- `Launch`, the default warm theme.
+- `Icy Blue`, based on Octet's icy blue palette.
+- `Crimson Lit`, based on Octet's crimson-lit palette.
+
+The selected theme is stored under `roos-theme` in browser local storage and applied through `document.documentElement.dataset.theme`.
 
 The System Health page probes app instances from the API container using `APP_INSTANCE_URLS`. Docker Compose sets this to the private `app-1` and `app-2` instance health endpoints by default.
 
@@ -240,7 +267,7 @@ Seed local demo data for Australian candidates and realistic job postings:
 pnpm db:seed:demo
 ```
 
-The demo seed is idempotent and replaces only its owned rows. It creates users for a veterinary technician, veterinarian, front desk receptionist, and accountant, plus matching active job postings. Demo user accounts share `DemoUserPassword123` unless `DEMO_USER_PASSWORD` is set.
+The demo seed is idempotent and replaces only its owned rows. It creates 100 Australian demo users, 200 Australian job postings, 100 resume versions, and 100 completed applications across veterinary, software, technician, lab, accounting, admin, operations, marketing, compliance, and related veterinary-industry roles. Demo user accounts share `DemoUserPassword123` unless `DEMO_USER_PASSWORD` is set.
 
 The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `https://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.
 

@@ -7,12 +7,14 @@ import { z } from "zod";
 import type { AnalyzeResponse, JobRecord, PrivacyRedactionSummary, ResumeAnalysis, UserRecord } from "../shared/types.js";
 import { analyzeResume } from "./analysis.js";
 import { matchApplicationsBySemanticQuery } from "./applicationSearch.js";
+import { getEffectiveAppSettings, getPublicAppSettings, updateAppSettings } from "./appSettingsStore.js";
 import { assessmentPdfFileName, buildAssessmentPdf } from "./assessmentPdf.js";
 import { config } from "./config.js";
+import { sendMeetingInvite } from "./emailService.js";
 import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "./jobPostingMatchProfiles.js";
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
-import { checkPostgres, completeJob, createJob, failJob, getJob, listJobs, listJobsForPosting, searchJobs, updateJobInterviewQuestions } from "./postgresStore.js";
+import { checkPostgres, completeJob, convertJobToApplication, createJob, failJob, getJob, hasJobForUserPosting, listJobs, listJobsForPosting, searchJobs, updateJobInterviewQuestions, type JobAnalysisKind } from "./postgresStore.js";
 import { detectResumePrivacy, redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
 import { createResumeVersion, getLatestResumeVersion, getResumeVersionDownload, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
@@ -22,6 +24,7 @@ import { matchAdminUsersBySemanticQuery, refreshUserMatchProfile } from "./userM
 import {
   createUser,
   findUserByEmail,
+  findUserById,
   getAdminStats,
   listAdminUserDetails,
   listUsers,
@@ -42,11 +45,13 @@ const upload = multer({
 
 const minimumResumeTextLength = 80;
 
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date in YYYY-MM-DD format.");
+
 const analyzeBodySchema = z.object({
   jobPostingId: z.coerce.number().int().positive().optional(),
   jobTitle: z.string().trim().optional(),
   targetRole: z.string().trim().optional(),
-  applicationDate: z.string().trim().min(4, "Application date is required."),
+  applicationDate: dateOnlySchema,
   jobDescription: z.string().trim().optional(),
   privacyRedactions: z.string().optional()
 }).transform((body) => {
@@ -68,7 +73,7 @@ const analyzeStoredResumeBodySchema = z.object({
   jobPostingId: z.coerce.number().int().positive().optional(),
   jobTitle: z.string().trim().optional(),
   targetRole: z.string().trim().optional(),
-  applicationDate: z.string().trim().min(4, "Application date is required."),
+  applicationDate: dateOnlySchema,
   jobDescription: z.string().trim().optional()
 }).transform((body) => {
   const jobTitle = body.jobTitle || body.targetRole;
@@ -129,17 +134,21 @@ const createJobPostingBodySchema = z.object({
 
 const adminUsersQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional()
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(10000).optional(),
+  excludeAssessedForPostingId: z.coerce.number().int().positive().optional()
 });
 
 const jobPostingsQuerySchema = z.object({
   search: z.string().trim().max(160).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional()
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(10000).optional()
 });
 
 const applicationsQuerySchema = z.object({
   search: z.string().trim().max(160).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional()
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(10000).optional()
 });
 
 const updateInterviewQuestionsBodySchema = z.object({
@@ -147,6 +156,69 @@ const updateInterviewQuestionsBodySchema = z.object({
 }).transform((body) => ({
   interviewQuestions: Array.from(new Set(body.interviewQuestions.map((question) => question.trim()).filter(Boolean)))
 }));
+
+const meetingInviteBodySchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+  durationMinutes: z.coerce.number().int().min(15).max(240).default(30),
+  message: z.string().trim().min(10, "Message is required.").max(5000, "Message is too long.")
+}).transform((body) => ({
+  ...body,
+  startsAt: new Date(body.startsAt)
+}));
+
+const emptyStringToNull = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const appSettingsBodySchema = z.object({
+  openaiApiKey: z.string().max(2000).optional(),
+  openaiBaseUrl: z.string().max(1000).optional(),
+  llmModel: z.string().max(200).optional(),
+  llmApiStyle: z.enum(["responses", "chat"]).optional(),
+  embeddingApiKey: z.string().max(2000).optional(),
+  embeddingBaseUrl: z.string().max(1000).optional(),
+  embeddingModel: z.string().max(200).optional(),
+  embeddingDimensions: z.coerce.number().int().positive().max(16000).optional().nullable(),
+  smtpHost: z.string().max(500).optional(),
+  smtpPort: z.coerce.number().int().positive().max(65535).optional().nullable(),
+  smtpSecure: z.boolean().optional().nullable(),
+  smtpUser: z.string().max(500).optional(),
+  smtpPass: z.string().max(2000).optional(),
+  emailFrom: z.string().max(500).optional(),
+  emailFromName: z.string().max(200).optional()
+}).transform((body) => {
+  const update: Record<string, unknown> = {};
+  const setIfPresent = <K extends keyof typeof body>(key: K, value: unknown) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      update[key] = value;
+    }
+  };
+
+  setIfPresent("openaiBaseUrl", emptyStringToNull(body.openaiBaseUrl));
+  setIfPresent("llmModel", emptyStringToNull(body.llmModel));
+  setIfPresent("llmApiStyle", body.llmApiStyle ?? null);
+  setIfPresent("embeddingBaseUrl", emptyStringToNull(body.embeddingBaseUrl));
+  setIfPresent("embeddingModel", emptyStringToNull(body.embeddingModel));
+  setIfPresent("embeddingDimensions", body.embeddingDimensions ?? null);
+  setIfPresent("smtpHost", emptyStringToNull(body.smtpHost));
+  setIfPresent("smtpPort", body.smtpPort ?? null);
+  setIfPresent("smtpSecure", body.smtpSecure ?? null);
+  setIfPresent("smtpUser", emptyStringToNull(body.smtpUser));
+  setIfPresent("emailFrom", emptyStringToNull(body.emailFrom));
+  setIfPresent("emailFromName", emptyStringToNull(body.emailFromName));
+
+  if (body.openaiApiKey?.trim()) {
+    update.openaiApiKey = body.openaiApiKey.trim();
+  }
+  if (body.embeddingApiKey?.trim()) {
+    update.embeddingApiKey = body.embeddingApiKey.trim();
+  }
+  if (body.smtpPass?.trim()) {
+    update.smtpPass = body.smtpPass.trim();
+  }
+  return update;
+});
 
 type AuthenticatedRequest = express.Request & {
   user: UserRecord;
@@ -304,6 +376,7 @@ const runResumeAnalysis = async ({
   applicationDate,
   jobTitle,
   jobDescription,
+  analysisKind = "application",
   resume
 }: {
   user: UserRecord;
@@ -311,6 +384,7 @@ const runResumeAnalysis = async ({
   applicationDate: string;
   jobTitle: string;
   jobDescription?: string;
+  analysisKind?: JobAnalysisKind;
   resume: AnalysisResumeSource;
 }): Promise<AnalyzeResponse> => {
   const selectedPosting = jobPostingId ? await getActiveJobPosting(jobPostingId) : undefined;
@@ -328,25 +402,35 @@ const runResumeAnalysis = async ({
     jobTitle: resolvedJobTitle,
     jobDescription: resolvedJobDescription,
     resumeFileName: resume.fileName,
-    characterCount: resume.characterCount
+    characterCount: resume.characterCount,
+    analysisKind
   });
 
-  let job = await getJob({ id: jobId, userId: user.id, role: user.role });
+  const internalReadRole = analysisKind === "candidate_assessment" ? "admin" : user.role;
+  let job = await getJob({ id: jobId, userId: user.id, role: internalReadRole });
   if (!job) {
     throw new Error("Created analysis job could not be loaded.");
   }
 
   try {
+    const settings = await getEffectiveAppSettings();
     const { analysis, chunkCount } = await analyzeResume(
       jobId,
       applicationDate,
       resume.text,
       resolvedJobTitle,
-      resolvedJobDescription
+      resolvedJobDescription,
+      settings
     );
 
-    await completeJob({ id: jobId, analysis, chunkCount });
-    job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    await completeJob({
+      id: jobId,
+      analysis,
+      chunkCount,
+      llmModel: settings.llmModel,
+      embeddingModel: settings.embeddingModel
+    });
+    job = await getJob({ id: jobId, userId: user.id, role: internalReadRole });
     if (!job) {
       throw new Error("Completed analysis job could not be loaded.");
     }
@@ -362,8 +446,8 @@ const runResumeAnalysis = async ({
       },
       privacyRedaction: resume.privacyRedaction,
       models: {
-        llm: config.llmModel,
-        embedding: config.embeddingModel
+        llm: settings.llmModel,
+        embedding: settings.embeddingModel
       }
     };
   } catch (error) {
@@ -426,6 +510,7 @@ const refreshJobPostingMatchProfileAfterWrite = (jobPostingId: number) => {
 };
 
 app.get("/api/health", async (_request, response) => {
+  const settings = await getEffectiveAppSettings();
   let postgres: { ok: boolean; extension: string; error?: string };
   try {
     await checkPostgres();
@@ -441,8 +526,8 @@ app.get("/api/health", async (_request, response) => {
   response.json({
     ok: true,
     models: {
-      llm: config.llmModel,
-      embedding: config.embeddingModel
+      llm: settings.llmModel,
+      embedding: settings.embeddingModel
     },
     storage: {
       postgres
@@ -456,13 +541,26 @@ app.get("/api/instance-health", (_request, response) => {
 
 app.get("/api/jobs", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
-  response.json({ jobs: visibleJobs(await listJobs({ userId: user.id, role: user.role }), user.role) });
+  const query = applicationsQuerySchema.parse(request.query);
+  response.json({
+    jobs: visibleJobs(
+      await listJobs({
+        userId: user.id,
+        role: user.role,
+        limit: query.limit ?? 10,
+        offset: query.offset ?? 0
+      }),
+      user.role
+    )
+  });
 });
 
 app.get("/api/applications", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   const query = applicationsQuerySchema.parse(request.query);
   const search = query.search ?? "";
+  const limit = query.limit ?? 10;
+  const offset = query.offset ?? 0;
   let semanticJobIds: number[] = [];
 
   try {
@@ -470,7 +568,7 @@ app.get("/api/applications", requireAuth, async (request, response) => {
       search,
       userId: user.id,
       role: user.role,
-      limit: query.limit ?? 100
+      limit: Math.min(offset + limit, 200)
     })).map((match) => match.jobId);
   } catch (error) {
     console.warn(
@@ -487,7 +585,8 @@ app.get("/api/applications", requireAuth, async (request, response) => {
         role: user.role,
         search,
         semanticJobIds,
-        limit: query.limit ?? 100
+        limit,
+        offset
       }),
       user.role
     )
@@ -498,10 +597,12 @@ app.get("/api/job-postings", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   const query = jobPostingsQuerySchema.parse(request.query);
   const search = query.search ?? "";
+  const limit = query.limit ?? 10;
+  const offset = query.offset ?? 0;
   let semanticJobPostingIds: number[] = [];
 
   try {
-    semanticJobPostingIds = (await matchJobPostingsBySemanticQuery(search, query.limit ?? 100)).map(
+    semanticJobPostingIds = (await matchJobPostingsBySemanticQuery(search, Math.min(offset + limit, 200))).map(
       (match) => match.jobPostingId
     );
   } catch (error) {
@@ -517,7 +618,8 @@ app.get("/api/job-postings", requireAuth, async (request, response) => {
       includeArchived: user.role === "admin",
       search,
       semanticJobPostingIds,
-      limit: query.limit ?? 100
+      limit,
+      offset
     })
   });
 });
@@ -711,6 +813,43 @@ app.get("/api/admin/jobs/:jobId/assessment.pdf", requireAuth, requireAdmin, asyn
   }
 });
 
+app.post("/api/admin/jobs/:jobId/meeting-invite", requireAuth, requireAdmin, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  const jobId = parsePositiveIntegerParam(request.params.jobId);
+  if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+    response.status(400).json({ error: "Choose a valid application." });
+    return;
+  }
+
+  try {
+    const body = meetingInviteBodySchema.parse(request.body);
+    const job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    if (!job) {
+      response.status(404).json({ error: "Application not found." });
+      return;
+    }
+
+    if (!job.userEmail) {
+      response.status(400).json({ error: "This application does not have a candidate email address." });
+      return;
+    }
+
+    await sendMeetingInvite({
+      job,
+      admin: user,
+      startsAt: body.startsAt,
+      durationMinutes: body.durationMinutes,
+      message: body.message
+    });
+
+    response.status(202).json({ sent: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Meeting invite failed.";
+    const status = message.includes("Email service is not configured") ? 503 : 400;
+    response.status(status).json({ error: message });
+  }
+});
+
 app.post("/api/logout", requireAuth, async (request, response) => {
   const { token } = request as AuthenticatedRequest;
   await deleteSession(token);
@@ -731,10 +870,12 @@ app.get("/api/admin/overview", requireAuth, requireAdmin, async (_request, respo
 app.get("/api/admin/users", requireAuth, requireAdmin, async (request, response) => {
   const query = adminUsersQuerySchema.parse(request.query);
   const search = query.search ?? "";
+  const limit = query.limit ?? 10;
+  const offset = query.offset ?? 0;
   let semanticUserIds: number[] = [];
 
   try {
-    semanticUserIds = (await matchAdminUsersBySemanticQuery(search, query.limit ?? 100)).map(
+    semanticUserIds = (await matchAdminUsersBySemanticQuery(search, Math.min(offset + limit, 200))).map(
       (match) => match.userId
     );
   } catch (error) {
@@ -749,13 +890,29 @@ app.get("/api/admin/users", requireAuth, requireAdmin, async (request, response)
     users: await listAdminUserDetails({
       search,
       semanticUserIds,
-      limit: query.limit ?? 100
+      limit,
+      offset,
+      excludeAssessedForPostingId: query.excludeAssessedForPostingId
     })
   });
 });
 
 app.get("/api/admin/system-health", requireAuth, requireAdmin, async (_request, response) => {
   response.json(await buildSystemHealth());
+});
+
+app.get("/api/admin/settings", requireAuth, requireAdmin, async (_request, response) => {
+  response.json({ settings: await getPublicAppSettings() });
+});
+
+app.patch("/api/admin/settings", requireAuth, requireAdmin, async (request, response) => {
+  try {
+    const body = appSettingsBodySchema.parse(request.body);
+    response.json({ settings: await updateAppSettings(body) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Settings update failed.";
+    response.status(400).json({ error: message });
+  }
 });
 
 app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, response) => {
@@ -778,6 +935,7 @@ app.post("/api/admin/job-postings", requireAuth, requireAdmin, async (request, r
 });
 
 app.get("/api/admin/job-postings/:jobPostingId/applications", requireAuth, requireAdmin, async (request, response) => {
+  const query = applicationsQuerySchema.parse(request.query);
   const jobPostingId = parsePositiveIntegerParam(request.params.jobPostingId);
   if (!Number.isSafeInteger(jobPostingId) || jobPostingId <= 0) {
     response.status(400).json({ error: "Choose a valid job posting." });
@@ -785,8 +943,96 @@ app.get("/api/admin/job-postings/:jobPostingId/applications", requireAuth, requi
   }
 
   response.json({
-    jobs: await listJobsForPosting({ jobPostingId, limit: 200 })
+    jobs: await listJobsForPosting({
+      jobPostingId,
+      limit: query.limit ?? 10,
+      offset: query.offset ?? 0
+    })
   });
+});
+
+app.post("/api/admin/users/:userId/analyze/latest", requireAuth, requireAdmin, async (request, response) => {
+  const candidateUserId = parsePositiveIntegerParam(request.params.userId);
+  if (!Number.isSafeInteger(candidateUserId) || candidateUserId <= 0) {
+    response.status(400).json({ error: "Choose a valid candidate." });
+    return;
+  }
+
+  try {
+    const admin = (request as AuthenticatedRequest).user;
+    const body = analyzeStoredResumeBodySchema.parse(request.body);
+    const candidate = await findUserById(candidateUserId);
+    if (!candidate) {
+      response.status(404).json({ error: "Candidate not found." });
+      return;
+    }
+
+    if (body.jobPostingId && await hasJobForUserPosting({ userId: candidate.id, jobPostingId: body.jobPostingId })) {
+      response.status(409).json({ error: "This candidate has already been assessed for the selected posting." });
+      return;
+    }
+
+    const latestResume = await getLatestResumeVersion(candidate.id);
+    if (!latestResume) {
+      response.status(400).json({ error: "Choose a candidate with an uploaded resume." });
+      return;
+    }
+
+    if (latestResume.resumeText.length < minimumResumeTextLength) {
+      response.status(400).json({ error: "The candidate's latest stored resume does not contain enough readable text." });
+      return;
+    }
+
+    response.json(
+      visibleAnalyzeResponse(await runResumeAnalysis({
+        user: candidate,
+        jobPostingId: body.jobPostingId,
+        applicationDate: body.applicationDate,
+        jobTitle: body.jobTitle,
+        jobDescription: body.jobDescription,
+        analysisKind: "candidate_assessment",
+        resume: {
+          fileName: latestResume.fileName,
+          characterCount: latestResume.characterCount,
+          text: latestResume.resumeText,
+          privacyRedaction: noPrivacyRedaction()
+        }
+      }), admin.role)
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unexpected server error.";
+    const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;
+    response.status(status).json({ error: message });
+  }
+});
+
+app.patch("/api/admin/jobs/:jobId/convert-to-application", requireAuth, requireAdmin, async (request, response) => {
+  const { user } = request as AuthenticatedRequest;
+  const jobId = parsePositiveIntegerParam(request.params.jobId);
+  if (!Number.isSafeInteger(jobId) || jobId <= 0) {
+    response.status(400).json({ error: "Choose a valid candidate assessment." });
+    return;
+  }
+
+  try {
+    const job = await getJob({ id: jobId, userId: user.id, role: user.role });
+    if (!job) {
+      response.status(404).json({ error: "Candidate assessment not found." });
+      return;
+    }
+
+    if (job.analysisKind !== "candidate_assessment") {
+      response.status(400).json({ error: "Only candidate assessments can be converted to applications." });
+      return;
+    }
+
+    await convertJobToApplication(jobId);
+    const updatedJob = await getJob({ id: jobId, userId: user.id, role: user.role });
+    response.json({ job: updatedJob });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Application conversion failed.";
+    response.status(400).json({ error: message });
+  }
 });
 
 app.patch("/api/admin/jobs/:jobId/interview-questions", requireAuth, requireAdmin, async (request, response) => {
@@ -916,7 +1162,7 @@ const start = async () => {
   }
 
   app.listen(config.port, config.host, () => {
-    console.log(`Resume analyzer API listening on http://${config.host}:${config.port}`);
+    console.log(`Roos API listening on http://${config.host}:${config.port}`);
   });
 };
 

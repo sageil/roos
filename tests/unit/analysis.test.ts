@@ -5,6 +5,7 @@ const {
   chatCreate,
   createEmbeddings,
   getCachedAnalysis,
+  getEffectiveAppSettings,
   queryJobEvidence,
   storeResumeChunks,
   upsertCachedAnalysis
@@ -12,6 +13,7 @@ const {
   chatCreate: vi.fn(),
   createEmbeddings: vi.fn(),
   getCachedAnalysis: vi.fn(),
+  getEffectiveAppSettings: vi.fn(),
   queryJobEvidence: vi.fn(),
   storeResumeChunks: vi.fn(),
   upsertCachedAnalysis: vi.fn()
@@ -28,6 +30,10 @@ vi.mock("../../src/server/config.js", () => ({
 vi.mock("../../src/server/embeddings.js", () => ({
   cosineSimilarity: vi.fn(() => 0.5),
   createEmbeddings
+}));
+
+vi.mock("../../src/server/appSettingsStore.js", () => ({
+  getEffectiveAppSettings
 }));
 
 vi.mock("../../src/server/openaiClients.js", () => ({
@@ -175,10 +181,24 @@ describe("analyzeResume", () => {
     chatCreate.mockReset();
     createEmbeddings.mockReset();
     getCachedAnalysis.mockReset();
+    getEffectiveAppSettings.mockReset();
     queryJobEvidence.mockReset();
     storeResumeChunks.mockReset();
     upsertCachedAnalysis.mockReset();
 
+    getEffectiveAppSettings.mockResolvedValue({
+      openaiApiKey: "not-needed",
+      openaiBaseUrl: "http://provider.test/v1",
+      llmModel: "local-llm",
+      llmApiStyle: "chat",
+      embeddingApiKey: "not-needed",
+      embeddingBaseUrl: "http://provider.test/v1",
+      embeddingModel: "embedding-model",
+      embeddingDimensions: 768,
+      smtpPort: 587,
+      smtpSecure: false,
+      emailFromName: "Roos Admin"
+    });
     createEmbeddings.mockResolvedValue([
       [1, 0],
       [1, 0]

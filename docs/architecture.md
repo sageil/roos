@@ -41,9 +41,11 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 
 - PostgreSQL is the source of truth for users, sessions, jobs, job postings, resume versions, analysis metadata, and embeddings.
 - pgvector is used for embedding storage and matching.
+- `jobs.analysis_kind` separates user-visible applications from admin-only candidate assessments.
+- Standard users only see `application` jobs. Admins can see `candidate_assessment` rows and may convert them to applications.
 - `user_match_profiles` stores one searchable semantic profile per user, built from the latest resume plus application and analysis context.
 - Admin semantic user profiles use `vector(768)` for `text-embedding-nomic-embed-text-v1.5-embedding`; changing embedding dimensions requires a matching schema migration and index rebuild.
-- Admin user search embeds the search phrase, queries `match_user_match_profiles(...)`, and ranks matching users through a pgvector IVFFlat index while preserving exact text search as fallback.
+- Admin user search embeds the search phrase, queries `match_user_match_profiles(...)`, and ranks matching users through a pgvector IVFFlat index while preserving exact text search as fallback. Text relevance ranks exact profile, title, skill, and evidence matches ahead of broad semantic matches.
 - `job_posting_match_profiles` stores one searchable semantic profile per job posting, built from the title, skill tags, and description.
 - Job search embeds the search phrase, queries `match_job_posting_match_profiles(...)`, and ranks matching postings through a pgvector IVFFlat index while preserving exact title, description, and skill search as fallback.
 - Analysis cache entries are stored in PostgreSQL.
@@ -78,6 +80,40 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 9. Ask the LLM for structured HR assessment fields using redacted evidence and redacted resume text.
 10. Compute final fit score and fit level deterministically in the server.
 11. Persist job result, analysis JSON, recommendation, models, and chunk count.
+
+## Admin Candidate Assessment Flow
+
+1. Admin opens a job posting from the Jobs page and chooses **Assess a candidate**.
+2. The UI opens a candidate picker backed by `/api/admin/users`.
+3. Candidate search is filtered to exclude users already assessed for the selected posting.
+4. `/api/admin/users/:userId/analyze/latest` analyzes the candidate's latest stored resume and creates a `candidate_assessment` job.
+5. Candidate assessment rows are visible to admins but are filtered out of standard user application lists, profile views, and user-facing search.
+6. `/api/admin/jobs/:jobId/convert-to-application` changes the assessment to an application when an admin decides it should become part of application history.
+
+## Pagination Flow
+
+- Page-facing list endpoints accept `limit` and `offset`.
+- The React UI requests 10 records per page.
+- Scroll sentinels use `IntersectionObserver` to append the next page when the user nears the bottom of a list.
+- Appending de-duplicates entities by `id` so a refresh or overlapping fetch does not duplicate rows.
+- The UI treats a page smaller than the requested limit as the end of the list.
+- Paginated endpoints include:
+  - `/api/jobs`
+  - `/api/applications`
+  - `/api/job-postings`
+  - `/api/admin/users`
+  - `/api/admin/job-postings/:jobPostingId/applications`
+
+Semantic search pagination asks the vector matcher for `offset + limit` candidate ids, then applies SQL `LIMIT/OFFSET`. This keeps later pages stable while still allowing text relevance and database filters to participate in final ordering.
+
+## Theme Flow
+
+- Themes are CSS-variable sets in `src/client/styles.css`.
+- The active theme name is stored in browser local storage as `roos-theme`.
+- The React app applies the theme by setting `document.documentElement.dataset.theme`.
+- `launch` removes the `data-theme` attribute and uses the default `:root` variables.
+- `icy-blue` and `crimson-lit` use `:root[data-theme="..."]` overrides.
+- The header theme button cycles through `Launch`, `Icy Blue`, and `Crimson Lit`.
 
 ## Resume Download Flow
 

@@ -1,3 +1,4 @@
+import { getEffectiveAppSettings } from "./appSettingsStore.js";
 import { createEmbeddings } from "./embeddings.js";
 import { queryMatchingJobIds } from "./postgresStore.js";
 
@@ -22,11 +23,13 @@ export const matchApplicationsBySemanticQuery = async ({
     return [];
   }
 
-  const [embedding] = await createEmbeddings([trimmedSearch]);
+  const settings = await getEffectiveAppSettings();
+  const [embedding] = await createEmbeddings([trimmedSearch], settings);
   return queryMatchingJobIds({
     queryEmbedding: embedding,
     userId,
     role,
-    nResults: limit
+    nResults: limit,
+    embeddingModel: settings.embeddingModel
   });
 };

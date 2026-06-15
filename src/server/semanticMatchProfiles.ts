@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { getEffectiveAppSettings } from "./appSettingsStore.js";
 import { queryPostgres } from "./database.js";
 import { createEmbeddings } from "./embeddings.js";
 import { toPgVectorLiteral } from "./vector.js";
@@ -33,13 +33,14 @@ export const refreshSemanticMatchProfile = async ({
     return;
   }
 
-  const [embedding] = await createEmbeddings([profileText]);
+  const settings = await getEffectiveAppSettings();
+  const [embedding] = await createEmbeddings([profileText], settings);
 
   await queryPostgres(upsertQuery, [
     entityId,
     profileText,
     toPgVectorLiteral(embedding),
-    config.embeddingModel
+    settings.embeddingModel
   ]);
 };
 
@@ -59,10 +60,11 @@ export const matchSemanticProfiles = async ({
     return [];
   }
 
-  const [embedding] = await createEmbeddings([trimmedSearch]);
+  const settings = await getEffectiveAppSettings();
+  const [embedding] = await createEmbeddings([trimmedSearch], settings);
   const result = await queryPostgres<MatchRow>(matchQuery, [
     toPgVectorLiteral(embedding),
-    config.embeddingModel,
+    settings.embeddingModel,
     limit
   ]);
 

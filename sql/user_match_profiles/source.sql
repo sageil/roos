@@ -38,8 +38,14 @@ LEFT JOIN LATERAL (
     E'\n\n'
     ORDER BY j.created_at DESC, j.id DESC
   ) AS profile_text
-  FROM jobs j
+  FROM (
+    SELECT *
+    FROM jobs
+    WHERE user_id = u.id
+      AND analysis_kind = 'application'
+    ORDER BY created_at DESC, id DESC
+    LIMIT 20
+  ) j
   LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
-  WHERE j.user_id = u.id
 ) application_text ON true
 WHERE u.id = $1;

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createEmbeddings, queryPostgres } = vi.hoisted(() => ({
+const { createEmbeddings, getEffectiveAppSettings, queryPostgres } = vi.hoisted(() => ({
   createEmbeddings: vi.fn(),
+  getEffectiveAppSettings: vi.fn(),
   queryPostgres: vi.fn()
 }));
 
@@ -13,6 +14,10 @@ vi.mock("../../src/server/config.js", () => ({
 
 vi.mock("../../src/server/database.js", () => ({
   queryPostgres
+}));
+
+vi.mock("../../src/server/appSettingsStore.js", () => ({
+  getEffectiveAppSettings
 }));
 
 vi.mock("../../src/server/embeddings.js", () => ({
@@ -37,7 +42,19 @@ import {
 describe("jobPostingMatchProfiles", () => {
   beforeEach(() => {
     createEmbeddings.mockReset();
+    getEffectiveAppSettings.mockReset();
     queryPostgres.mockReset();
+    getEffectiveAppSettings.mockResolvedValue({
+      openaiApiKey: "not-needed",
+      llmModel: "local-llm",
+      llmApiStyle: "chat",
+      embeddingApiKey: "not-needed",
+      embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding",
+      embeddingDimensions: 768,
+      smtpPort: 587,
+      smtpSecure: false,
+      emailFromName: "Roos Admin"
+    });
   });
 
   it("refreshes a job posting semantic match profile", async () => {
@@ -50,9 +67,12 @@ describe("jobPostingMatchProfiles", () => {
     await refreshJobPostingMatchProfile(4);
 
     expect(queryPostgres).toHaveBeenNthCalledWith(1, "jobPostingMatchProfiles.source", [4]);
-    expect(createEmbeddings).toHaveBeenCalledWith([
-      "Role: Veterinary Receptionist\nSkills: client intake, phone triage"
-    ]);
+    expect(createEmbeddings).toHaveBeenCalledWith(
+      ["Role: Veterinary Receptionist\nSkills: client intake, phone triage"],
+      expect.objectContaining({
+        embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
+      })
+    );
     expect(queryPostgres).toHaveBeenNthCalledWith(2, "jobPostingMatchProfiles.upsert", [
       4,
       "Role: Veterinary Receptionist\nSkills: client intake, phone triage",
@@ -83,7 +103,12 @@ describe("jobPostingMatchProfiles", () => {
       { jobPostingId: 8, score: 0.92 },
       { jobPostingId: 4, score: 0.81 }
     ]);
-    expect(createEmbeddings).toHaveBeenCalledWith(["urgent visit coordination"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(
+      ["urgent visit coordination"],
+      expect.objectContaining({
+        embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
+      })
+    );
     expect(queryPostgres).toHaveBeenCalledWith("jobPostingMatchProfiles.match", [
       "[0.4,0.5]",
       "text-embedding-nomic-embed-text-v1.5-embedding",

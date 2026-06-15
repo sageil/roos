@@ -15,16 +15,19 @@ type SeedSummaryRow = {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const sqlPath = path.resolve(__dirname, "../sql/admin/seed_demo_data.sql");
+const cleanupSqlPath = path.resolve(__dirname, "../sql/admin/cleanup_test_data.sql");
 
 const demoPassword = process.env.DEMO_USER_PASSWORD || "DemoUserPassword123";
 const adminEmail = (process.env.ADMIN_EMAIL || config.adminEmail).toLowerCase();
 
 const main = async () => {
   const seedSql = readFileSync(sqlPath, "utf8");
+  const cleanupSql = readFileSync(cleanupSqlPath, "utf8");
   const passwordHash = await hashPassword(demoPassword);
   const client = await connectPostgres();
 
   try {
+    await client.query(cleanupSql);
     const result = await client.query<SeedSummaryRow>(seedSql, [
       passwordHash,
       adminEmail,

@@ -1,4 +1,5 @@
-import { config } from "./config.js";
+import type { AppSettings } from "../shared/types.js";
+import { getEffectiveAppSettings } from "./appSettingsStore.js";
 import { createEmbeddingClient } from "./openaiClients.js";
 
 export const cosineSimilarity = (left: number[], right: number[]): number => {
@@ -35,19 +36,23 @@ export const cosineSimilarity = (left: number[], right: number[]): number => {
   return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
 };
 
-export const createEmbeddings = async (inputs: string[]): Promise<number[][]> => {
-  const client = createEmbeddingClient();
+export const createEmbeddings = async (
+  inputs: string[],
+  settings?: AppSettings
+): Promise<number[][]> => {
+  const effectiveSettings = settings ?? await getEffectiveAppSettings();
+  const client = createEmbeddingClient(effectiveSettings);
   const request: {
     model: string;
     input: string[];
     dimensions?: number;
   } = {
-    model: config.embeddingModel,
+    model: effectiveSettings.embeddingModel,
     input: inputs
   };
 
-  if (config.embeddingDimensions) {
-    request.dimensions = config.embeddingDimensions;
+  if (effectiveSettings.embeddingDimensions) {
+    request.dimensions = effectiveSettings.embeddingDimensions;
   }
 
   const response = await client.embeddings.create(request);

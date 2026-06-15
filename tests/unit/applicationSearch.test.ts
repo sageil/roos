@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createEmbeddings, queryMatchingJobIds } = vi.hoisted(() => ({
+const { createEmbeddings, getEffectiveAppSettings, queryMatchingJobIds } = vi.hoisted(() => ({
   createEmbeddings: vi.fn(),
+  getEffectiveAppSettings: vi.fn(),
   queryMatchingJobIds: vi.fn()
+}));
+
+vi.mock("../../src/server/appSettingsStore.js", () => ({
+  getEffectiveAppSettings
 }));
 
 vi.mock("../../src/server/embeddings.js", () => ({
@@ -18,7 +23,19 @@ import { matchApplicationsBySemanticQuery } from "../../src/server/applicationSe
 describe("matchApplicationsBySemanticQuery", () => {
   beforeEach(() => {
     createEmbeddings.mockReset();
+    getEffectiveAppSettings.mockReset();
     queryMatchingJobIds.mockReset();
+    getEffectiveAppSettings.mockResolvedValue({
+      openaiApiKey: "not-needed",
+      llmModel: "local-llm",
+      llmApiStyle: "chat",
+      embeddingApiKey: "not-needed",
+      embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding",
+      embeddingDimensions: 768,
+      smtpPort: 587,
+      smtpSecure: false,
+      emailFromName: "Roos Admin"
+    });
   });
 
   it("skips empty semantic application searches", async () => {
@@ -51,12 +68,18 @@ describe("matchApplicationsBySemanticQuery", () => {
       { jobId: 12, score: 0.91 }
     ]);
 
-    expect(createEmbeddings).toHaveBeenCalledWith(["anaesthetic monitoring and patient handling"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(
+      ["anaesthetic monitoring and patient handling"],
+      expect.objectContaining({
+        embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
+      })
+    );
     expect(queryMatchingJobIds).toHaveBeenCalledWith({
       queryEmbedding: [0.1, 0.2],
       userId: 7,
       role: "admin",
-      nResults: 25
+      nResults: 25,
+      embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
     });
   });
 });

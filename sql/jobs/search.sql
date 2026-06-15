@@ -2,6 +2,7 @@ SELECT
   j.id::int,
   j.user_id::int,
   j.job_posting_id::int,
+  COALESCE(j.analysis_kind, 'application') AS analysis_kind,
   jp.title AS job_posting_title,
   u.name AS user_name,
   u.email AS user_email,
@@ -17,8 +18,6 @@ SELECT
   j.fit_level,
   j.analysis_json::text,
   j.error_message,
-  j.llm_model,
-  j.embedding_model,
   j.created_at::text,
   j.updated_at::text
 FROM jobs j
@@ -28,7 +27,13 @@ LEFT JOIN LATERAL (
   SELECT array_position($4::bigint[], j.id) AS rank
 ) semantic_match ON true
 WHERE
-  ($1::text = 'admin' OR j.user_id = $2)
+  (
+    $1::text = 'admin'
+    OR (
+      j.user_id = $2
+      AND j.analysis_kind = 'application'
+    )
+  )
   AND (
     COALESCE($3::text, '') = ''
     OR j.id = ANY($4::bigint[])
@@ -46,4 +51,5 @@ ORDER BY
   semantic_match.rank NULLS LAST,
   j.created_at DESC,
   j.id DESC
-LIMIT $5;
+LIMIT $5
+OFFSET $6;

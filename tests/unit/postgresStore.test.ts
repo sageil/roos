@@ -29,7 +29,9 @@ vi.mock("../../src/server/sql.js", () => ({
     },
     jobs: {
       complete: "jobs.complete",
+      convertToApplication: "jobs.convertToApplication",
       create: "jobs.create",
+      existsForUserPosting: "jobs.existsForUserPosting",
       fail: "jobs.fail",
       get: "jobs.get",
       listAll: "jobs.listAll",
@@ -41,7 +43,8 @@ vi.mock("../../src/server/sql.js", () => ({
     resumeChunks: {
       matchJobs: "resumeChunks.matchJobs",
       match: "resumeChunks.match",
-      upsert: "resumeChunks.upsert"
+      upsert: "resumeChunks.upsert",
+      upsertMany: "resumeChunks.upsertMany"
     },
     transactions: {
       begin: "transactions.begin",
@@ -53,10 +56,12 @@ vi.mock("../../src/server/sql.js", () => ({
 
 import {
   completeJob,
+  convertJobToApplication,
   createJob,
   failJob,
   getCachedAnalysis,
   getJob,
+  hasJobForUserPosting,
   listJobsForPosting,
   listJobs,
   queryMatchingJobIds,
@@ -71,6 +76,7 @@ const jobRow = {
   id: 12,
   user_id: 7,
   job_posting_id: 4,
+  analysis_kind: "application" as const,
   job_posting_title: "Veterinary Receptionist",
   user_name: "Priya Patel",
   user_email: "priya@example.com.au",
@@ -86,8 +92,6 @@ const jobRow = {
   fit_level: "high" as const,
   analysis_json: null,
   error_message: null,
-  llm_model: "local-llm",
-  embedding_model: "embedding-model",
   created_at: "2026-06-14T12:00:00.000Z",
   updated_at: "2026-06-14T12:05:00.000Z"
 };
@@ -150,6 +154,7 @@ describe("postgresStore", () => {
     expect(queryPostgres).toHaveBeenCalledWith("jobs.create", [
       7,
       null,
+      "application",
       "2026-06-14",
       "Veterinary Receptionist",
       null,
@@ -201,6 +206,22 @@ describe("postgresStore", () => {
     ]);
   });
 
+  it("converts a candidate assessment to an application", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await convertJobToApplication(12);
+
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.convertToApplication", [12]);
+  });
+
+  it("checks whether a user already has a job for a posting", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [{ exists: true }] });
+
+    await expect(hasJobForUserPosting({ userId: 7, jobPostingId: 4 })).resolves.toBe(true);
+
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.existsForUserPosting", [7, 4]);
+  });
+
   it("lists all jobs for admins", async () => {
     queryPostgres.mockResolvedValueOnce({ rows: [jobRow] });
 
@@ -209,6 +230,7 @@ describe("postgresStore", () => {
         id: 12,
         userId: 7,
         jobPostingId: 4,
+        analysisKind: "application",
         jobPostingTitle: "Veterinary Receptionist",
         userName: "Priya Patel",
         userEmail: "priya@example.com.au",
@@ -224,13 +246,11 @@ describe("postgresStore", () => {
         fitScore: 87,
         fitLevel: "high",
         errorMessage: undefined,
-        llmModel: "local-llm",
-        embeddingModel: "embedding-model",
         createdAt: "2026-06-14T12:00:00.000Z",
         updatedAt: "2026-06-14T12:05:00.000Z"
       }
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("jobs.listAll", [50]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.listAll", [50, 0]);
   });
 
   it("maps stored analysis JSON onto listed jobs", async () => {
@@ -333,7 +353,7 @@ describe("postgresStore", () => {
 
     await listJobs({ userId: 7, role: "user", limit: 10 });
 
-    expect(queryPostgres).toHaveBeenCalledWith("jobs.listForUser", [7, 10]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.listForUser", [7, 10, 0]);
   });
 
   it("lists jobs for a specific posting", async () => {
@@ -347,7 +367,7 @@ describe("postgresStore", () => {
         analysis
       })
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("jobs.listForPosting", [4, 25]);
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.listForPosting", [4, 25, 0]);
   });
 
   it("searches jobs with exact and semantic inputs", async () => {
@@ -372,7 +392,8 @@ describe("postgresStore", () => {
       7,
       "client intake",
       [12, 9],
-      25
+      25,
+      0
     ]);
   });
 
@@ -411,16 +432,16 @@ describe("postgresStore", () => {
     });
 
     expect(client.query).toHaveBeenNthCalledWith(1, "transactions.begin");
-    expect(client.query).toHaveBeenNthCalledWith(2, "resumeChunks.upsert", [
+    expect(client.query).toHaveBeenNthCalledWith(2, "resumeChunks.upsertMany", [
       12,
-      1,
-      "first chunk",
-      "[0.1,0.2]",
+      [1, 2],
+      ["first chunk", "second chunk"],
+      ["[0.1,0.2]", "[0.3,0.4]"],
       "2026-06-14",
       "Veterinary Receptionist",
       "text-embedding-nomic-embed-text-v1.5-embedding"
     ]);
-    expect(client.query).toHaveBeenNthCalledWith(4, "transactions.commit");
+    expect(client.query).toHaveBeenNthCalledWith(3, "transactions.commit");
     expect(client.release).toHaveBeenCalledOnce();
   });
 

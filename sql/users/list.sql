@@ -7,6 +7,7 @@ SELECT
   COUNT(j.id)::int AS application_count
 FROM users u
 LEFT JOIN jobs j ON j.user_id = u.id
+  AND j.analysis_kind = 'application'
 GROUP BY u.id
 ORDER BY u.created_at DESC, u.id DESC
 LIMIT $1;

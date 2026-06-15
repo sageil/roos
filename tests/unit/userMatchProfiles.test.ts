@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createEmbeddings, queryPostgres } = vi.hoisted(() => ({
+const { createEmbeddings, getEffectiveAppSettings, queryPostgres } = vi.hoisted(() => ({
   createEmbeddings: vi.fn(),
+  getEffectiveAppSettings: vi.fn(),
   queryPostgres: vi.fn()
 }));
 
@@ -13,6 +14,10 @@ vi.mock("../../src/server/config.js", () => ({
 
 vi.mock("../../src/server/database.js", () => ({
   queryPostgres
+}));
+
+vi.mock("../../src/server/appSettingsStore.js", () => ({
+  getEffectiveAppSettings
 }));
 
 vi.mock("../../src/server/embeddings.js", () => ({
@@ -37,7 +42,19 @@ import {
 describe("userMatchProfiles", () => {
   beforeEach(() => {
     createEmbeddings.mockReset();
+    getEffectiveAppSettings.mockReset();
     queryPostgres.mockReset();
+    getEffectiveAppSettings.mockResolvedValue({
+      openaiApiKey: "not-needed",
+      llmModel: "local-llm",
+      llmApiStyle: "chat",
+      embeddingApiKey: "not-needed",
+      embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding",
+      embeddingDimensions: 768,
+      smtpPort: 587,
+      smtpSecure: false,
+      emailFromName: "Roos Admin"
+    });
   });
 
   it("refreshes a user's semantic match profile", async () => {
@@ -50,7 +67,12 @@ describe("userMatchProfiles", () => {
     await refreshUserMatchProfile(7);
 
     expect(queryPostgres).toHaveBeenNthCalledWith(1, "userMatchProfiles.source", [7]);
-    expect(createEmbeddings).toHaveBeenCalledWith(["Resume and application summary"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(
+      ["Resume and application summary"],
+      expect.objectContaining({
+        embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
+      })
+    );
     expect(queryPostgres).toHaveBeenNthCalledWith(2, "userMatchProfiles.upsert", [
       7,
       "Resume and application summary",
@@ -81,7 +103,12 @@ describe("userMatchProfiles", () => {
       { userId: 9, score: 0.91 },
       { userId: 7, score: 0.82 }
     ]);
-    expect(createEmbeddings).toHaveBeenCalledWith(["client intake and phone triage"]);
+    expect(createEmbeddings).toHaveBeenCalledWith(
+      ["client intake and phone triage"],
+      expect.objectContaining({
+        embeddingModel: "text-embedding-nomic-embed-text-v1.5-embedding"
+      })
+    );
     expect(queryPostgres).toHaveBeenCalledWith("userMatchProfiles.match", [
       "[0.4,0.5]",
       "text-embedding-nomic-embed-text-v1.5-embedding",

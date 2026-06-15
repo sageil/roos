@@ -110,6 +110,13 @@ export const findUserByEmail = async (email: string) => {
     : undefined;
 };
 
+export const findUserById = async (id: number): Promise<UserRecord | undefined> => {
+  const result = await queryPostgres<UserRow>(queries.users.findById, [id]);
+  const row = result.rows[0];
+
+  return row ? mapUserRow(row) : undefined;
+};
+
 export const updateUserProfile = async ({
   id,
   name,
@@ -144,16 +151,22 @@ export const listUsers = async (limit = 100): Promise<AdminUserRecord[]> => {
 export const listAdminUserDetails = async ({
   search = "",
   semanticUserIds = [],
-  limit = 100
+  limit = 100,
+  offset = 0,
+  excludeAssessedForPostingId
 }: {
   search?: string;
   semanticUserIds?: number[];
   limit?: number;
+  offset?: number;
+  excludeAssessedForPostingId?: number;
 } = {}): Promise<AdminUserDetailRecord[]> => {
   const result = await queryPostgres<AdminUserDetailRow>(queries.users.listAdminDetails, [
     search.trim(),
     semanticUserIds,
-    limit
+    limit,
+    excludeAssessedForPostingId ?? null,
+    offset
   ]);
 
   return result.rows.map(mapAdminUserDetailRow);

@@ -90,6 +90,7 @@ export type JobRecord = {
   id: number;
   userId?: number;
   jobPostingId?: number;
+  analysisKind?: "application" | "candidate_assessment";
   jobPostingTitle?: string;
   userName?: string;
   userEmail?: string;
@@ -105,8 +106,6 @@ export type JobRecord = {
   fitScore?: number;
   fitLevel?: "low" | "medium" | "high";
   errorMessage?: string;
-  llmModel?: string;
-  embeddingModel?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -175,6 +174,35 @@ export type JobPostingRecord = {
   matchCount?: number;
   averageFitScore?: number;
   topFitScore?: number;
+};
+
+export type AppSettings = {
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
+  llmModel: string;
+  llmApiStyle: "responses" | "chat";
+  embeddingApiKey?: string;
+  embeddingBaseUrl?: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  smtpHost?: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser?: string;
+  smtpPass?: string;
+  emailFrom?: string;
+  emailFromName: string;
+};
+
+export type PublicAppSettings = Omit<AppSettings, "openaiApiKey" | "embeddingApiKey" | "smtpPass"> & {
+  openaiApiKeyConfigured: boolean;
+  embeddingApiKeyConfigured: boolean;
+  smtpPassConfigured: boolean;
+  updatedAt?: string;
+};
+
+export type AppSettingsResponse = {
+  settings: PublicAppSettings;
 };
 
 export type JobPostingsResponse = {

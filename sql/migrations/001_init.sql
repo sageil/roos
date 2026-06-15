@@ -1,9 +1,20 @@
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE OR REPLACE FUNCTION immutable_text_array_to_string(items TEXT[], delimiter TEXT)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+  SELECT array_to_string(items, delimiter)
+$$;
 
 CREATE TABLE IF NOT EXISTS jobs (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT,
   job_posting_id BIGINT,
+  analysis_kind TEXT NOT NULL DEFAULT 'application' CHECK (analysis_kind IN ('application', 'candidate_assessment')),
   status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
   application_date DATE NOT NULL,
   job_title TEXT NOT NULL,
@@ -62,6 +73,21 @@ ALTER TABLE IF EXISTS jobs
 
 ALTER TABLE IF EXISTS jobs
   ADD COLUMN IF NOT EXISTS job_posting_id BIGINT;
+
+ALTER TABLE IF EXISTS jobs
+  ADD COLUMN IF NOT EXISTS analysis_kind TEXT NOT NULL DEFAULT 'application';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'jobs_analysis_kind_check'
+  ) THEN
+    ALTER TABLE jobs
+      ADD CONSTRAINT jobs_analysis_kind_check CHECK (analysis_kind IN ('application', 'candidate_assessment'));
+  END IF;
+END $$;
 
 ALTER TABLE IF EXISTS job_postings
   ADD COLUMN IF NOT EXISTS skills TEXT[] NOT NULL DEFAULT '{}';
@@ -165,44 +191,227 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DO $$
+BEGIN
+  IF to_regclass('app_setings') IS NOT NULL
+    AND to_regclass('app_settings') IS NULL
+  THEN
+    ALTER TABLE app_setings RENAME TO app_settings;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_setings_embedding_dimensions_range_check'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_settings_embedding_dimensions_range_check'
+  ) THEN
+    ALTER TABLE app_settings
+      RENAME CONSTRAINT app_setings_embedding_dimensions_range_check
+      TO app_settings_embedding_dimensions_range_check;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_setings_smtp_port_range_check'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_settings_smtp_port_range_check'
+  ) THEN
+    ALTER TABLE app_settings
+      RENAME CONSTRAINT app_setings_smtp_port_range_check
+      TO app_settings_smtp_port_range_check;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+  openai_api_key TEXT,
+  openai_base_url TEXT,
+  llm_model TEXT,
+  llm_api_style TEXT CHECK (llm_api_style IS NULL OR llm_api_style IN ('responses', 'chat')),
+  embedding_api_key TEXT,
+  embedding_base_url TEXT,
+  embedding_model TEXT,
+  embedding_dimensions INTEGER CHECK (embedding_dimensions IS NULL OR (embedding_dimensions > 0 AND embedding_dimensions <= 16000)),
+  smtp_host TEXT,
+  smtp_port INTEGER CHECK (smtp_port IS NULL OR (smtp_port > 0 AND smtp_port <= 65535)),
+  smtp_secure BOOLEAN,
+  smtp_user TEXT,
+  smtp_pass TEXT,
+  email_from TEXT,
+  email_from_name TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_settings_embedding_dimensions_range_check'
+  ) THEN
+    ALTER TABLE app_settings
+      ADD CONSTRAINT app_settings_embedding_dimensions_range_check
+      CHECK (embedding_dimensions IS NULL OR (embedding_dimensions > 0 AND embedding_dimensions <= 16000));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'app_settings_smtp_port_range_check'
+  ) THEN
+    ALTER TABLE app_settings
+      ADD CONSTRAINT app_settings_smtp_port_range_check
+      CHECK (smtp_port IS NULL OR (smtp_port > 0 AND smtp_port <= 65535));
+  END IF;
+END $$;
+
+DO $$
+DECLARE
+  user_match_profiles_table regclass := to_regclass('user_match_profiles');
+  job_posting_match_profiles_table regclass := to_regclass('job_posting_match_profiles');
+BEGIN
+  IF user_match_profiles_table IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM pg_attribute
+      WHERE attrelid = user_match_profiles_table
+        AND attname = 'embedding'
+        AND format_type(atttypid, atttypmod) = 'vector(768)'
+    )
+  THEN
+    DROP INDEX IF EXISTS user_match_profiles_embedding_ivfflat_idx;
+  END IF;
+
+  IF job_posting_match_profiles_table IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM pg_attribute
+      WHERE attrelid = job_posting_match_profiles_table
+        AND attname = 'embedding'
+        AND format_type(atttypid, atttypmod) = 'vector(768)'
+    )
+  THEN
+    DROP INDEX IF EXISTS job_posting_match_profiles_embedding_ivfflat_idx;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS user_match_profiles (
   user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   profile_text TEXT NOT NULL,
-  embedding vector(768) NOT NULL,
+  embedding vector NOT NULL,
   embedding_model TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE user_match_profiles
-  ALTER COLUMN embedding TYPE vector(768)
-  USING embedding::vector(768);
+DO $$
+DECLARE
+  user_match_profiles_table regclass := to_regclass('user_match_profiles');
+BEGIN
+  IF user_match_profiles_table IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM pg_attribute
+      WHERE attrelid = user_match_profiles_table
+        AND attname = 'embedding'
+        AND format_type(atttypid, atttypmod) <> 'vector'
+    )
+  THEN
+    ALTER TABLE user_match_profiles
+      ALTER COLUMN embedding TYPE vector
+      USING embedding::vector;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS job_posting_match_profiles (
   job_posting_id BIGINT PRIMARY KEY REFERENCES job_postings(id) ON DELETE CASCADE,
   profile_text TEXT NOT NULL,
-  embedding vector(768) NOT NULL,
+  embedding vector NOT NULL,
   embedding_model TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE job_posting_match_profiles
-  ALTER COLUMN embedding TYPE vector(768)
-  USING embedding::vector(768);
+DO $$
+DECLARE
+  job_posting_match_profiles_table regclass := to_regclass('job_posting_match_profiles');
+BEGIN
+  IF job_posting_match_profiles_table IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM pg_attribute
+      WHERE attrelid = job_posting_match_profiles_table
+        AND attname = 'embedding'
+        AND format_type(atttypid, atttypmod) <> 'vector'
+    )
+  THEN
+    ALTER TABLE job_posting_match_profiles
+      ALTER COLUMN embedding TYPE vector
+      USING embedding::vector;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS resume_chunks_job_id_idx ON resume_chunks(job_id);
 CREATE INDEX IF NOT EXISTS jobs_user_id_idx ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS jobs_job_posting_id_idx ON jobs(job_posting_id);
+CREATE INDEX IF NOT EXISTS jobs_created_at_id_idx ON jobs(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS jobs_user_application_created_at_id_idx
+  ON jobs(user_id, created_at DESC, id DESC)
+  WHERE analysis_kind = 'application';
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND indexname = 'jobs_job_posting_created_at_id_idx'
+      AND position(' WHERE ' in indexdef) > 0
+  ) THEN
+    DROP INDEX jobs_job_posting_created_at_id_idx;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS jobs_job_posting_created_at_id_idx
+  ON jobs(job_posting_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS jobs_user_posting_active_idx
+  ON jobs(user_id, job_posting_id)
+  WHERE status <> 'failed';
+CREATE INDEX IF NOT EXISTS jobs_job_title_trgm_idx ON jobs USING gin (job_title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS jobs_job_description_trgm_idx ON jobs USING gin (job_description gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS jobs_llm_recommendation_trgm_idx ON jobs USING gin (llm_recommendation gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS jobs_resume_file_name_trgm_idx ON jobs USING gin (resume_file_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS jobs_analysis_json_trgm_idx ON jobs USING gin ((analysis_json::text) gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS job_postings_status_created_at_idx ON job_postings(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS job_postings_created_at_id_idx ON job_postings(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS job_postings_title_trgm_idx ON job_postings USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS job_postings_description_trgm_idx ON job_postings USING gin (description gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS job_postings_skills_trgm_idx ON job_postings USING gin ((immutable_text_array_to_string(skills, ' ')) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS users_created_at_id_idx ON users(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS users_name_trgm_idx ON users USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS users_email_trgm_idx ON users USING gin (email gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS resume_versions_user_id_idx ON resume_versions(user_id);
+CREATE INDEX IF NOT EXISTS resume_versions_user_version_desc_idx ON resume_versions(user_id, version_number DESC);
+CREATE INDEX IF NOT EXISTS resume_versions_file_name_trgm_idx ON resume_versions USING gin (file_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS analysis_cache_models_idx ON analysis_cache(llm_model, embedding_model);
+CREATE INDEX IF NOT EXISTS resume_chunks_embedding_model_job_id_idx ON resume_chunks(embedding_model, job_id);
+CREATE INDEX IF NOT EXISTS resume_chunks_embedding_ivfflat_idx
+  ON resume_chunks USING ivfflat ((embedding::vector(768)) vector_cosine_ops) WITH (lists = 100)
+  WHERE vector_dims(embedding) = 768;
 CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_model_idx ON user_match_profiles(embedding_model);
 CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_ivfflat_idx
-  ON user_match_profiles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  ON user_match_profiles USING ivfflat ((embedding::vector(768)) vector_cosine_ops) WITH (lists = 100)
+  WHERE vector_dims(embedding) = 768;
 CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_model_idx ON job_posting_match_profiles(embedding_model);
 CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_ivfflat_idx
-  ON job_posting_match_profiles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  ON job_posting_match_profiles USING ivfflat ((embedding::vector(768)) vector_cosine_ops) WITH (lists = 100)
+  WHERE vector_dims(embedding) = 768;
 
 CREATE OR REPLACE FUNCTION match_resume_chunks(
   target_job_id BIGINT,
@@ -214,21 +423,39 @@ RETURNS TABLE (
   document TEXT,
   score DOUBLE PRECISION
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 AS $$
+BEGIN
+  IF vector_dims(query_embedding) = 768 THEN
+    RETURN QUERY
+    SELECT
+      rc.chunk_id,
+      rc.document,
+      1 - (rc.embedding::vector(768) <=> query_embedding::vector(768)) AS score
+    FROM resume_chunks rc
+    WHERE rc.job_id = target_job_id
+      AND vector_dims(rc.embedding) = 768
+    ORDER BY rc.embedding::vector(768) <=> query_embedding::vector(768)
+    LIMIT match_count;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
   SELECT
     rc.chunk_id,
     rc.document,
     1 - (rc.embedding <=> query_embedding) AS score
   FROM resume_chunks rc
   WHERE rc.job_id = target_job_id
+    AND vector_dims(rc.embedding) = vector_dims(query_embedding)
   ORDER BY rc.embedding <=> query_embedding
-  LIMIT match_count
+  LIMIT match_count;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION match_user_match_profiles(
-  query_embedding vector(768),
+  query_embedding vector,
   target_embedding_model TEXT,
   match_count INTEGER
 )
@@ -236,20 +463,44 @@ RETURNS TABLE (
   user_id BIGINT,
   score DOUBLE PRECISION
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 AS $$
+BEGIN
+  IF vector_dims(query_embedding) = 768 THEN
+    RETURN QUERY
+    SELECT
+      ump.user_id,
+      1 - (ump.embedding::vector(768) <=> query_embedding::vector(768)) AS score
+    FROM user_match_profiles ump
+    WHERE vector_dims(ump.embedding) = 768
+      AND ump.embedding_model = target_embedding_model
+    ORDER BY ump.embedding::vector(768) <=> query_embedding::vector(768)
+    LIMIT match_count;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
   SELECT
-    ump.user_id,
-    1 - (ump.embedding <=> query_embedding) AS score
-  FROM user_match_profiles ump
-  WHERE ump.embedding_model = target_embedding_model
-  ORDER BY ump.embedding <=> query_embedding
-  LIMIT match_count
+    fallback.user_id,
+    fallback.score
+  FROM (
+    SELECT
+      ump.user_id,
+      1 - (ump.embedding <=> query_embedding) AS score
+    FROM user_match_profiles ump
+    WHERE vector_dims(ump.embedding) = vector_dims(query_embedding)
+      AND ump.embedding_model = target_embedding_model
+    ORDER BY ump.embedding <=> query_embedding
+    LIMIT match_count
+  ) fallback
+  ORDER BY fallback.score DESC
+  LIMIT match_count;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION match_job_posting_match_profiles(
-  query_embedding vector(768),
+  query_embedding vector,
   target_embedding_model TEXT,
   match_count INTEGER
 )
@@ -257,14 +508,38 @@ RETURNS TABLE (
   job_posting_id BIGINT,
   score DOUBLE PRECISION
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 AS $$
+BEGIN
+  IF vector_dims(query_embedding) = 768 THEN
+    RETURN QUERY
+    SELECT
+      jpmp.job_posting_id,
+      1 - (jpmp.embedding::vector(768) <=> query_embedding::vector(768)) AS score
+    FROM job_posting_match_profiles jpmp
+    WHERE vector_dims(jpmp.embedding) = 768
+      AND jpmp.embedding_model = target_embedding_model
+    ORDER BY jpmp.embedding::vector(768) <=> query_embedding::vector(768)
+    LIMIT match_count;
+    RETURN;
+  END IF;
+
+  RETURN QUERY
   SELECT
-    jpmp.job_posting_id,
-    1 - (jpmp.embedding <=> query_embedding) AS score
-  FROM job_posting_match_profiles jpmp
-  WHERE jpmp.embedding_model = target_embedding_model
-  ORDER BY jpmp.embedding <=> query_embedding
-  LIMIT match_count
+    fallback.job_posting_id,
+    fallback.score
+  FROM (
+    SELECT
+      jpmp.job_posting_id,
+      1 - (jpmp.embedding <=> query_embedding) AS score
+    FROM job_posting_match_profiles jpmp
+    WHERE vector_dims(jpmp.embedding) = vector_dims(query_embedding)
+      AND jpmp.embedding_model = target_embedding_model
+    ORDER BY jpmp.embedding <=> query_embedding
+    LIMIT match_count
+  ) fallback
+  ORDER BY fallback.score DESC
+  LIMIT match_count;
+END;
 $$;

@@ -55,18 +55,21 @@ export const listJobPostings = async ({
   includeArchived = false,
   search = "",
   semanticJobPostingIds = [],
-  limit = 100
+  limit = 100,
+  offset = 0
 }: {
   includeArchived?: boolean;
   search?: string;
   semanticJobPostingIds?: number[];
   limit?: number;
+  offset?: number;
 } = {}): Promise<JobPostingRecord[]> => {
   const result = await queryPostgres<JobPostingRow>(queries.jobPostings.list, [
     includeArchived,
     search.trim(),
     semanticJobPostingIds,
-    limit
+    limit,
+    offset
   ]);
   return result.rows.map(mapJobPostingRow);
 };

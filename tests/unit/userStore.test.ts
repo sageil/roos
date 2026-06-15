@@ -204,9 +204,18 @@ describe("userStore", () => {
             updatedAt: "2026-06-14T12:05:00.000Z"
           }
         ]
-      }
+    }
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["client intake", [7, 9], 25]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["client intake", [7, 9], 25, null, 0]);
+  });
+
+  it("passes assessed posting exclusions to admin user detail search", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      listAdminUserDetails({ excludeAssessedForPostingId: 42 })
+    ).resolves.toEqual([]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["", [], 100, 42, 0]);
   });
 
   it("upserts an admin with normalized email", async () => {

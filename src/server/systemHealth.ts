@@ -1,5 +1,6 @@
 import os from "node:os";
 import type { AppInstanceHealth, ComponentHealth, SystemHealthResponse } from "../shared/types.js";
+import { getEffectiveAppSettings } from "./appSettingsStore.js";
 import { config } from "./config.js";
 import { checkPostgres } from "./postgresStore.js";
 
@@ -98,6 +99,7 @@ const component = (
 });
 
 export const buildSystemHealth = async (): Promise<SystemHealthResponse> => {
+  const settings = await getEffectiveAppSettings();
   const components: ComponentHealth[] = [];
 
   try {
@@ -115,13 +117,13 @@ export const buildSystemHealth = async (): Promise<SystemHealthResponse> => {
 
   components.push(component(
     "LLM provider",
-    config.openaiBaseUrl || config.openaiApiKey ? "online" : "degraded",
-    `${config.llmModel} via ${config.llmApiStyle}`
+    settings.openaiBaseUrl || settings.openaiApiKey ? "online" : "degraded",
+    `${settings.llmModel} via ${settings.llmApiStyle}`
   ));
   components.push(component(
     "Embedding provider",
-    config.embeddingBaseUrl || config.embeddingApiKey ? "online" : "degraded",
-    config.embeddingModel
+    settings.embeddingBaseUrl || settings.embeddingApiKey ? "online" : "degraded",
+    settings.embeddingModel
   ));
 
   const instances = await Promise.all(parseInstanceTargets(config.appInstanceUrls).map(checkInstance));
@@ -135,9 +137,9 @@ export const buildSystemHealth = async (): Promise<SystemHealthResponse> => {
     components,
     instances,
     models: {
-      llm: config.llmModel,
-      embedding: config.embeddingModel,
-      llmApiStyle: config.llmApiStyle
+      llm: settings.llmModel,
+      embedding: settings.embeddingModel,
+      llmApiStyle: settings.llmApiStyle
     }
   };
 };
