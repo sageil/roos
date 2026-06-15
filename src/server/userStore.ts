@@ -143,6 +143,16 @@ export const updateUserProfile = async ({
   }
 };
 
+export const updateUserPassword = async ({
+  id,
+  passwordHash
+}: {
+  id: number;
+  passwordHash: string;
+}) => {
+  await queryPostgres(queries.users.updatePassword, [id, passwordHash]);
+};
+
 export const listUsers = async (limit = 100): Promise<AdminUserRecord[]> => {
   const result = await queryPostgres<AdminUserRow>(queries.users.list, [limit]);
   return result.rows.map(mapAdminUserRow);

@@ -18,6 +18,7 @@ vi.mock("../../src/server/sql.js", () => ({
       findByEmail: "users.findByEmail",
       list: "users.list",
       listAdminDetails: "users.listAdminDetails",
+      updatePassword: "users.updatePassword",
       updateProfile: "users.updateProfile",
       upsertAdmin: "users.upsertAdmin"
     }
@@ -30,6 +31,7 @@ import {
   getAdminStats,
   listAdminUserDetails,
   listUsers,
+  updateUserPassword,
   updateUserProfile,
   upsertAdminUser
 } from "../../src/server/userStore.js";
@@ -120,6 +122,14 @@ describe("userStore", () => {
     await expect(
       updateUserProfile({ id: 7, name: "Priya Patel", email: "priya@example.com.au" })
     ).rejects.toThrow("An account with that email already exists.");
+  });
+
+  it("updates a user's password hash", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await updateUserPassword({ id: 7, passwordHash: "new-hash" });
+
+    expect(queryPostgres).toHaveBeenCalledWith("users.updatePassword", [7, "new-hash"]);
   });
 
   it("lists users with application counts for admins", async () => {

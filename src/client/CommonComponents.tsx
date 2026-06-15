@@ -39,7 +39,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JobRecord } from "../shared/types";
 import { themeLabels, themeOrder } from "./appConstants";
 import type { PrivacyRedactionForm, Status, ThemeName } from "./appTypes";
-import { fitLabel, fitTone } from "./appUtils";
+import { fitLabel, fitTone, formatLocalDate } from "./appUtils";
 import { useInfiniteScroll } from "./useInfiniteScroll";
 
 export const JobFitBadge = ({ job }: { job: JobRecord }) =>
@@ -391,7 +391,7 @@ export const JobHistory = ({ jobs, isAdmin }: { jobs: JobRecord[]; isAdmin: bool
             <div>
               <strong>{job.jobTitle}</strong>
               <span>
-                {job.applicationDate} | {job.status}
+                {formatLocalDate(job.applicationDate)} | {job.status}
               </span>
               {isAdmin && job.userEmail && <span>{job.userName} | {job.userEmail}</span>}
             </div>

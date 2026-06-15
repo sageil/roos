@@ -55,8 +55,13 @@ import {
   StatusBadge
 } from "./CommonComponents";
 import type { Status } from "./appTypes";
-import { formatFileSize } from "./appUtils";
+import { formatFileSize, formatLocalDate, formatLocalDateTime } from "./appUtils";
 import { focusableModalElements } from "./modalFocus";
+
+export type PostingApplicationAction = {
+  latestApplication: JobRecord;
+  canReanalyze: boolean;
+};
 
 export const AdminUsersPanel = ({
   users,
@@ -160,7 +165,7 @@ export const AdminUsersPanel = ({
                           <p>
                             {formatFileSize(latestResume.fileSize)} |{" "}
                             {Math.ceil(latestResume.characterCount / 1000)}k chars |{" "}
-                            {latestResume.createdAt}
+                            {formatLocalDateTime(latestResume.createdAt)}
                           </p>
                           <button
                             className="secondary-button compact-action"
@@ -216,7 +221,7 @@ export const AdminUsersPanel = ({
                                 </span>
                                 <span className="application-title">
                                   <strong>{job.jobTitle}</strong>
-                                  <span>{job.applicationDate} | {job.status}</span>
+                                  <span>{formatLocalDate(job.applicationDate)} | {job.status}</span>
                                   {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
                                 </span>
                                 <JobFitBadge job={job} />
@@ -341,7 +346,7 @@ export const PostingApplicationsPanel = ({
                   </span>
                   <span className="application-title">
                     <strong>{job.userName ?? "Candidate"}</strong>
-                    <span>{job.userEmail ?? "No email"} | {job.applicationDate} | {job.status}</span>
+                    <span>{job.userEmail ?? "No email"} | {formatLocalDate(job.applicationDate)} | {job.status}</span>
                     <span>{job.jobTitle}</span>
                   </span>
                   <span className="application-summary-badges">
@@ -391,6 +396,8 @@ export const ApplicationSearchPanel = ({
   onRefresh,
   onLoadMore,
   onUseJob,
+  canUseJob,
+  useJobLabel,
   onDownloadAssessment,
   onConvertToApplication,
   onScheduleMeeting,
@@ -406,6 +413,8 @@ export const ApplicationSearchPanel = ({
   onRefresh: () => void;
   onLoadMore: () => void;
   onUseJob: (job: JobRecord) => void;
+  canUseJob?: (job: JobRecord) => boolean;
+  useJobLabel?: string;
   onDownloadAssessment?: (job: JobRecord) => void;
   onConvertToApplication?: (job: JobRecord) => Promise<void> | void;
   onScheduleMeeting?: (job: JobRecord) => void;
@@ -483,7 +492,7 @@ export const ApplicationSearchPanel = ({
                     <span className="application-title">
                       <strong>{job.jobTitle}</strong>
                       <span>
-                        {job.applicationDate} | {job.status}
+                        {formatLocalDate(job.applicationDate)} | {job.status}
                         {job.jobPostingTitle ? ` | ${job.jobPostingTitle}` : ""}
                       </span>
                       {isAdmin && job.userEmail && (
@@ -505,6 +514,8 @@ export const ApplicationSearchPanel = ({
                       job={job}
                       isAdmin={isAdmin}
                       onUseJob={onUseJob}
+                      canUseJob={canUseJob}
+                      useJobLabel={useJobLabel}
                       onDownloadAssessment={isAdmin ? onDownloadAssessment : undefined}
                       onConvertToApplication={isAdmin ? onConvertToApplication : undefined}
                       onScheduleMeeting={isAdmin ? onScheduleMeeting : undefined}
@@ -550,7 +561,9 @@ export const JobSearchPanel = ({
   onScheduleMeeting,
   onSaveInterviewQuestions,
   isAdmin,
-  hasResume
+  hasResume,
+  postingApplicationActions,
+  onViewOwnApplication
 }: {
   postings: JobPostingRecord[];
   search: string;
@@ -574,6 +587,8 @@ export const JobSearchPanel = ({
   onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
   isAdmin: boolean;
   hasResume: boolean;
+  postingApplicationActions?: Map<number, PostingApplicationAction>;
+  onViewOwnApplication?: (job: JobRecord) => void;
 }) => {
   const applicationsPanelRef = useRef<HTMLElement | null>(null);
 
@@ -621,13 +636,41 @@ export const JobSearchPanel = ({
         ) : (
           postings.map((posting) => {
             const applicationCount = posting.matchCount ?? 0;
+            const postingAction = !isAdmin ? postingApplicationActions?.get(posting.id) : undefined;
+            const alreadyApplied = Boolean(postingAction?.latestApplication);
+            const actionTone = isAdmin || !hasResume || postingAction?.canReanalyze || !alreadyApplied
+              ? "primary"
+              : "secondary";
+            const actionIcon = isAdmin || (hasResume && (!alreadyApplied || postingAction?.canReanalyze))
+              ? <Target size={16} />
+              : alreadyApplied
+                ? <Eye size={16} />
+                : <Upload size={16} />;
+            const actionLabel = isAdmin
+              ? "Assess a candidate"
+              : !hasResume
+                ? "Upload resume first"
+                : postingAction?.canReanalyze
+                  ? "Re-analyze with latest resume"
+                  : alreadyApplied
+                    ? "View application"
+                    : "Apply now";
+            const handlePostingAction = () => {
+              if (!isAdmin && alreadyApplied && !postingAction?.canReanalyze && postingAction?.latestApplication) {
+                onViewOwnApplication?.(postingAction.latestApplication);
+                return;
+              }
+
+              onUsePosting(posting);
+            };
+
             return (
               <Fragment key={posting.id}>
                 <article className="posting-card">
                   <div className="posting-card-header">
                     <div>
                       <strong>{posting.title}</strong>
-                      <span>{posting.status} | {posting.createdAt}</span>
+                      <span>{posting.status} | {formatLocalDateTime(posting.createdAt)}</span>
                     </div>
                     {onViewApplications && applicationCount > 0 ? (
                       <button
@@ -655,13 +698,15 @@ export const JobSearchPanel = ({
                   <p>{posting.description}</p>
 
                   <div className="posting-metrics">
-                    <StatusBadge>Avg {posting.averageFitScore ?? 0}/100</StatusBadge>
-                    <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
-                      Top {posting.topFitScore ?? 0}/100
-                    </StatusBadge>
-                    <button className={isAdmin ? "assess-candidate-button" : "secondary-button"} type="button" onClick={() => onUsePosting(posting)}>
-                      {isAdmin || hasResume ? <Target size={16} /> : <Upload size={16} />}
-                      {isAdmin ? "Assess a candidate" : hasResume ? "Apply" : "Upload resume to apply"}
+                    <div className="posting-score-list">
+                      <StatusBadge>Avg {posting.averageFitScore ?? 0}/100</StatusBadge>
+                      <StatusBadge tone={posting.topFitScore && posting.topFitScore >= 80 ? "success" : "neutral"}>
+                        Top {posting.topFitScore ?? 0}/100
+                      </StatusBadge>
+                    </div>
+                    <button className={`posting-action-button ${actionTone}`} type="button" onClick={handlePostingAction}>
+                      {actionIcon}
+                      {actionLabel}
                     </button>
                   </div>
                 </article>
@@ -1211,7 +1256,7 @@ export const AdminOverview = ({ overview }: { overview: AdminOverviewResponse })
             <article className="admin-row" key={posting.id}>
               <div>
                 <strong>{posting.title}</strong>
-                <span>{posting.status} | {posting.createdAt}</span>
+                <span>{posting.status} | {formatLocalDateTime(posting.createdAt)}</span>
               </div>
               <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
                 {posting.matchCount ?? 0} matches
@@ -1241,7 +1286,7 @@ export const AdminOverview = ({ overview }: { overview: AdminOverviewResponse })
             <article className="admin-row" key={job.id}>
               <div>
                 <strong>{job.jobTitle}</strong>
-                <span>{job.userEmail ?? "Unassigned"} | {job.applicationDate}</span>
+                <span>{job.userEmail ?? "Unassigned"} | {formatLocalDate(job.applicationDate)}</span>
                 {job.jobPostingTitle && <span>Posting: {job.jobPostingTitle}</span>}
               </div>
               <StatusBadge tone={job.status === "completed" ? "success" : job.status === "failed" ? "danger" : "warning"}>

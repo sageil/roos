@@ -34,6 +34,7 @@ vi.mock("../../src/server/sql.js", () => ({
       existsForUserPosting: "jobs.existsForUserPosting",
       fail: "jobs.fail",
       get: "jobs.get",
+      latestForUserPosting: "jobs.latestForUserPosting",
       listAll: "jobs.listAll",
       listForPosting: "jobs.listForPosting",
       listForUser: "jobs.listForUser",
@@ -61,6 +62,7 @@ import {
   failJob,
   getCachedAnalysis,
   getJob,
+  getLatestApplicationForUserPosting,
   hasJobForUserPosting,
   listJobsForPosting,
   listJobs,
@@ -220,6 +222,25 @@ describe("postgresStore", () => {
     await expect(hasJobForUserPosting({ userId: 7, jobPostingId: 4 })).resolves.toBe(true);
 
     expect(queryPostgres).toHaveBeenCalledWith("jobs.existsForUserPosting", [7, 4]);
+  });
+
+  it("gets the latest application for a user and posting", async () => {
+    queryPostgres.mockResolvedValueOnce({
+      rows: [{ id: 12, created_at: "2026-06-14T12:00:00.000Z" }]
+    });
+
+    await expect(getLatestApplicationForUserPosting({ userId: 7, jobPostingId: 4 })).resolves.toEqual({
+      id: 12,
+      createdAt: "2026-06-14T12:00:00.000Z"
+    });
+
+    expect(queryPostgres).toHaveBeenCalledWith("jobs.latestForUserPosting", [7, 4]);
+  });
+
+  it("returns undefined when no application exists for a user and posting", async () => {
+    queryPostgres.mockResolvedValueOnce({ rows: [] });
+
+    await expect(getLatestApplicationForUserPosting({ userId: 7, jobPostingId: 4 })).resolves.toBeUndefined();
   });
 
   it("lists all jobs for admins", async () => {

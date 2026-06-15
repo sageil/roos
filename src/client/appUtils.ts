@@ -94,6 +94,38 @@ export const privacyPreviewToForm = (
 
 export const redactionTotalLabel = (total: number) => `${total} privacy ${total === 1 ? "value" : "values"} removed`;
 
+const localDateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric"
+});
+
+const localDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit"
+});
+
+export const formatLocalDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return localDateFormatter.format(new Date(year, month - 1, day));
+};
+
+export const formatLocalDateTime = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return localDateTimeFormatter.format(date);
+};
+
 export const formatFileSize = (bytes: number) => {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;

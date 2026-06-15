@@ -14,7 +14,7 @@ import { sendMeetingInvite } from "./emailService.js";
 import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "./jobPostingMatchProfiles.js";
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
-import { checkPostgres, completeJob, convertJobToApplication, createJob, failJob, getJob, hasJobForUserPosting, listJobs, listJobsForPosting, searchJobs, updateJobInterviewQuestions, type JobAnalysisKind } from "./postgresStore.js";
+import { checkPostgres, completeJob, convertJobToApplication, createJob, failJob, getJob, getLatestApplicationForUserPosting, hasJobForUserPosting, listJobs, listJobsForPosting, searchJobs, updateJobInterviewQuestions, type JobAnalysisKind } from "./postgresStore.js";
 import { detectResumePrivacy, redactResumePrivacy, type PrivacyRedactionInput } from "./privacyRedaction.js";
 import { createResumeVersion, getLatestResumeVersion, getResumeVersionDownload, listResumeVersions } from "./resumeVersionStore.js";
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
@@ -29,6 +29,7 @@ import {
   listAdminUserDetails,
   listUsers,
   updateUserProfile,
+  updateUserPassword,
   upsertAdminUser
 } from "./userStore.js";
 
@@ -44,6 +45,7 @@ const upload = multer({
 });
 
 const minimumResumeTextLength = 80;
+const duplicateApplicationMessage = "Upload a new resume version before applying to this role again.";
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date in YYYY-MM-DD format.");
 
@@ -98,15 +100,17 @@ const privacyRedactionSchema = z.object({
   links: z.array(z.string().trim().max(300)).max(10).default([])
 }).default({});
 
+const passwordSchema = z.string()
+  .min(12, "Password must be at least 12 characters.")
+  .max(256, "Password is too long.")
+  .regex(/[a-z]/, "Password must include a lowercase letter.")
+  .regex(/[A-Z]/, "Password must include an uppercase letter.")
+  .regex(/[0-9]/, "Password must include a number.");
+
 const registerBodySchema = z.object({
   name: z.string().trim().min(2, "Name is required.").max(120, "Name is too long."),
   email: z.string().trim().email("Enter a valid email.").max(320, "Email is too long."),
-  password: z.string()
-    .min(12, "Password must be at least 12 characters.")
-    .max(256, "Password is too long.")
-    .regex(/[a-z]/, "Password must include a lowercase letter.")
-    .regex(/[A-Z]/, "Password must include an uppercase letter.")
-    .regex(/[0-9]/, "Password must include a number."),
+  password: passwordSchema,
   passwordConfirmation: z.string().min(1, "Retype password.")
 }).refine((body) => body.password === body.passwordConfirmation, {
   message: "Passwords must match.",
@@ -121,6 +125,15 @@ const loginBodySchema = z.object({
 const updateProfileBodySchema = z.object({
   name: z.string().trim().min(2, "Name is required.").max(120, "Name is too long."),
   email: z.string().trim().email("Enter a valid email.").max(320, "Email is too long.")
+});
+
+const updatePasswordBodySchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required."),
+  password: passwordSchema,
+  passwordConfirmation: z.string().min(1, "Retype password.")
+}).refine((body) => body.password === body.passwordConfirmation, {
+  message: "Passwords must match.",
+  path: ["passwordConfirmation"]
 });
 
 const createJobPostingBodySchema = z.object({
@@ -368,6 +381,31 @@ const readRedactedResumeUpload = async ({
     text,
     privacyRedaction: summary
   };
+};
+
+const assertCandidateCanApplyToPosting = async ({
+  userId,
+  jobPostingId,
+  latestResumeCreatedAt
+}: {
+  userId: number;
+  jobPostingId?: number;
+  latestResumeCreatedAt?: string;
+}) => {
+  if (!jobPostingId) {
+    return;
+  }
+
+  const latestApplication = await getLatestApplicationForUserPosting({ userId, jobPostingId });
+  if (!latestApplication) {
+    return;
+  }
+
+  const resumeTime = latestResumeCreatedAt ? Date.parse(latestResumeCreatedAt) : Number.NaN;
+  const applicationTime = Date.parse(latestApplication.createdAt);
+  if (!Number.isFinite(resumeTime) || resumeTime <= applicationTime) {
+    throw new Error(duplicateApplicationMessage);
+  }
 };
 
 const runResumeAnalysis = async ({
@@ -693,6 +731,34 @@ app.patch("/api/profile", requireAuth, async (request, response) => {
   }
 });
 
+app.patch("/api/profile/password", requireAuth, async (request, response) => {
+  try {
+    const { user } = request as AuthenticatedRequest;
+    const body = updatePasswordBodySchema.parse(request.body);
+    const account = await findUserByEmail(user.email);
+
+    if (!account || !(await verifyPassword(body.currentPassword, account.passwordHash))) {
+      response.status(400).json({ error: "Current password is incorrect." });
+      return;
+    }
+
+    if (await verifyPassword(body.password, account.passwordHash)) {
+      response.status(400).json({ error: "Choose a new password that is different from your current password." });
+      return;
+    }
+
+    await updateUserPassword({
+      id: user.id,
+      passwordHash: await hashPassword(body.password)
+    });
+
+    response.json({ updated: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Password update failed.";
+    response.status(400).json({ error: message });
+  }
+});
+
 app.get("/api/resumes", requireAuth, async (request, response) => {
   const { user } = request as AuthenticatedRequest;
   response.json({ resumes: await listResumeVersions(user.id) });
@@ -1001,7 +1067,11 @@ app.post("/api/admin/users/:userId/analyze/latest", requireAuth, requireAdmin, a
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
-    const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;
+    const status = message === duplicateApplicationMessage
+      ? 409
+      : message.includes("OPENAI_API_KEY") || message.includes("API key")
+        ? 500
+        : 400;
     response.status(status).json({ error: message });
   }
 });
@@ -1078,6 +1148,15 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
     }
 
     const body = analyzeBodySchema.parse(request.body);
+    if (body.jobPostingId && user.role !== "admin") {
+      const latestResume = await getLatestResumeVersion(user.id);
+      await assertCandidateCanApplyToPosting({
+        userId: user.id,
+        jobPostingId: body.jobPostingId,
+        latestResumeCreatedAt: latestResume?.createdAt
+      });
+    }
+
     const resumeUpload = await readRedactedResumeUpload({
       file: request.file,
       user,
@@ -1101,7 +1180,11 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
-    const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;
+    const status = message === duplicateApplicationMessage
+      ? 409
+      : message.includes("OPENAI_API_KEY") || message.includes("API key")
+        ? 500
+        : 400;
     response.status(status).json({ error: message });
   }
 });
@@ -1114,6 +1197,14 @@ app.post("/api/analyze/latest", requireAuth, async (request, response) => {
     if (!latestResume) {
       response.status(400).json({ error: "Upload a resume to your profile before matching a role." });
       return;
+    }
+
+    if (user.role !== "admin") {
+      await assertCandidateCanApplyToPosting({
+        userId: user.id,
+        jobPostingId: body.jobPostingId,
+        latestResumeCreatedAt: latestResume.createdAt
+      });
     }
 
     if (latestResume.resumeText.length < minimumResumeTextLength) {
@@ -1138,7 +1229,11 @@ app.post("/api/analyze/latest", requireAuth, async (request, response) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
-    const status = message.includes("OPENAI_API_KEY") || message.includes("API key") ? 500 : 400;
+    const status = message === duplicateApplicationMessage
+      ? 409
+      : message.includes("OPENAI_API_KEY") || message.includes("API key")
+        ? 500
+        : 400;
     response.status(status).json({ error: message });
   }
 });

@@ -1301,7 +1301,69 @@ h1 {
 
 .posting-metrics {
   flex-wrap: wrap;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.posting-score-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.posting-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 40px;
+  min-width: 138px;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.posting-action-button svg {
+  flex: 0 0 auto;
+}
+
+.posting-action-button.primary {
+  border: 1px solid var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+  box-shadow: var(--primary-shadow);
+}
+
+.posting-action-button.secondary {
+  border: 1px solid var(--input);
+  color: var(--foreground);
+  background: var(--card);
+}
+
+.posting-action-button.primary:hover,
+.posting-action-button.primary:focus-visible {
+  background: var(--primary-hover);
+  box-shadow: var(--primary-hover-shadow);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.posting-action-button.secondary:hover,
+.posting-action-button.secondary:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+  box-shadow: 0 0 0 3px var(--ring);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .assess-candidate-button {
@@ -2800,6 +2862,15 @@ h1 {
 
   .password-rules {
     grid-template-columns: 1fr;
+  }
+
+  .posting-metrics,
+  .posting-score-list {
+    align-items: stretch;
+  }
+
+  .posting-action-button {
+    width: 100%;
   }
 }
 

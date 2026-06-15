@@ -22,6 +22,7 @@ export const queries = {
     complete: loadSql("jobs", "complete.sql"),
     existsForUserPosting: loadSql("jobs", "exists_for_user_posting.sql"),
     fail: loadSql("jobs", "fail.sql"),
+    latestForUserPosting: loadSql("jobs", "latest_for_user_posting.sql"),
     list: loadSql("jobs", "list.sql"),
     listAll: loadSql("jobs", "list_all.sql"),
     listForPosting: loadSql("jobs", "list_for_posting.sql"),
@@ -46,6 +47,7 @@ export const queries = {
     findByEmail: loadSql("users", "find_by_email.sql"),
     list: loadSql("users", "list.sql"),
     listAdminDetails: loadSql("users", "list_admin_details.sql"),
+    updatePassword: loadSql("users", "update_password.sql"),
     updateProfile: loadSql("users", "update_profile.sql"),
     upsertAdmin: loadSql("users", "upsert_admin.sql")
   },

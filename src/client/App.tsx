@@ -98,6 +98,8 @@ import {
   filenameFromContentDisposition,
   fitLabel,
   formatFileSize,
+  formatLocalDate,
+  formatLocalDateTime,
   privacyPreviewToForm,
   redactionTotalLabel,
   serializePrivacyRedactions,
@@ -162,6 +164,11 @@ export const App = () => {
   const [profileNotice, setProfileNotice] = useState("");
   const [profileStatus, setProfileStatus] = useState<Status>("idle");
   const [profileError, setProfileError] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirmation, setNewPasswordConfirmation] = useState("");
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState<Status>("idle");
+  const [passwordChangeError, setPasswordChangeError] = useState("");
   const [resumeVersions, setResumeVersions] = useState<ResumeVersionRecord[]>([]);
   const [resumeUploadFile, setResumeUploadFile] = useState<File | null>(null);
   const [resumeUploadPrivacy, setResumeUploadPrivacy] = useState<PrivacyRedactionForm>(() => defaultPrivacyRedactionForm());
@@ -204,7 +211,49 @@ export const App = () => {
   const registrationPasswordValid = Object.values(registrationPasswordChecks).every(Boolean);
   const registrationPasswordsMatch =
     registrationPasswordConfirmation.length > 0 && registrationPassword === registrationPasswordConfirmation;
+  const newPasswordChecks = {
+    length: newPassword.length >= 12,
+    lowercase: /[a-z]/.test(newPassword),
+    uppercase: /[A-Z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword)
+  };
+  const newPasswordValid = Object.values(newPasswordChecks).every(Boolean);
+  const newPasswordsMatch = newPasswordConfirmation.length > 0 && newPassword === newPasswordConfirmation;
   const hasProfileResume = resumeVersions.length > 0;
+  const latestResume = resumeVersions[0];
+  const latestResumeCreatedAt = latestResume ? Date.parse(latestResume.createdAt) : Number.NaN;
+  const latestApplicationByPostingId = useMemo(() => {
+    const applicationMap = new Map<number, JobRecord>();
+    for (const job of [...jobs, ...applicationSearchResults]) {
+      if (!job.jobPostingId || job.analysisKind === "candidate_assessment") {
+        continue;
+      }
+
+      const current = applicationMap.get(job.jobPostingId);
+      if (!current || Date.parse(job.createdAt) > Date.parse(current.createdAt)) {
+        applicationMap.set(job.jobPostingId, job);
+      }
+    }
+
+    return applicationMap;
+  }, [applicationSearchResults, jobs]);
+  const postingApplicationActions = useMemo(() => {
+    const actionMap = new Map<number, { latestApplication: JobRecord; canReanalyze: boolean }>();
+    for (const [postingId, latestApplication] of latestApplicationByPostingId) {
+      actionMap.set(postingId, {
+        latestApplication,
+        canReanalyze: Number.isFinite(latestResumeCreatedAt) && latestResumeCreatedAt > Date.parse(latestApplication.createdAt)
+      });
+    }
+
+    return actionMap;
+  }, [latestApplicationByPostingId, latestResumeCreatedAt]);
+  const hasNewerResumeForJob = (job: JobRecord) =>
+    Boolean(
+      job.jobPostingId &&
+      Number.isFinite(latestResumeCreatedAt) &&
+      latestResumeCreatedAt > Date.parse(job.createdAt)
+    );
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -279,6 +328,11 @@ export const App = () => {
     navigateToView(defaultAuthenticatedView, { replace: true });
     setProfileName("");
     setProfileEmail("");
+    setCurrentPassword("");
+    setNewPassword("");
+    setNewPasswordConfirmation("");
+    setPasswordChangeStatus("idle");
+    setPasswordChangeError("");
     setResumeUploadPrivacy(defaultPrivacyRedactionForm());
     setResumeUploadPrivacyStatus("idle");
     setResumeUploadPrivacyError("");
@@ -685,6 +739,11 @@ export const App = () => {
     setUser(data.user);
     setProfileName(data.user.name);
     setProfileEmail(data.user.email);
+    setCurrentPassword("");
+    setNewPassword("");
+    setNewPasswordConfirmation("");
+    setPasswordChangeStatus("idle");
+    setPasswordChangeError("");
     setResumeUploadPrivacy(defaultPrivacyRedactionForm(data.user));
     setResumeVersions(data.resumes);
   };
@@ -1048,6 +1107,50 @@ export const App = () => {
     } catch (caught) {
       setProfileStatus("error");
       setProfileError(caught instanceof Error ? caught.message : "Profile update failed.");
+    }
+  };
+
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordChangeError("");
+    setPasswordChangeStatus("loading");
+
+    try {
+      if (!currentPassword) {
+        throw new Error("Enter your current password.");
+      }
+      if (!newPasswordValid) {
+        throw new Error("New password must meet all listed rules.");
+      }
+      if (!newPasswordsMatch) {
+        throw new Error("Retyped password must match.");
+      }
+
+      const response = await authenticatedFetch("/api/profile/password", {
+        method: "PATCH",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          currentPassword,
+          password: newPassword,
+          passwordConfirmation: newPasswordConfirmation
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Password update failed.");
+      }
+
+      setCurrentPassword("");
+      setNewPassword("");
+      setNewPasswordConfirmation("");
+      setPasswordChangeStatus("success");
+    } catch (caught) {
+      setPasswordChangeStatus("error");
+      setPasswordChangeError(caught instanceof Error ? caught.message : "Password update failed.");
     }
   };
 
@@ -1512,6 +1615,15 @@ export const App = () => {
     void loadJobSearch(token, job.jobTitle);
   };
 
+  const viewApplication = (job: JobRecord) => {
+    setApplicationSearch(job.jobTitle);
+    setApplicationSearchResults([job]);
+    setApplicationSearchStatus("success");
+    setApplicationSearchError("");
+    setApplicationSearchHasMore(false);
+    navigateToView("applications");
+  };
+
   if (!user) {
     return (
       <main className="app-shell">
@@ -1782,6 +1894,8 @@ export const App = () => {
               onConvertToApplication={(job) => convertCandidateAssessmentToApplication(job)}
               onScheduleMeeting={openMeetingInvite}
               onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
+              canUseJob={user.role === "admin" ? undefined : hasNewerResumeForJob}
+              useJobLabel={user.role === "admin" ? undefined : "Re-analyze with latest resume"}
             />
           )}
 
@@ -1829,6 +1943,8 @@ export const App = () => {
               onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
               isAdmin={user.role === "admin"}
               hasResume={hasProfileResume}
+              postingApplicationActions={user.role === "admin" ? undefined : postingApplicationActions}
+              onViewOwnApplication={viewApplication}
             />
           )}
 
@@ -1978,7 +2094,7 @@ export const App = () => {
                         <div className="posting-card-header">
                           <div>
                             <strong>{posting.title}</strong>
-                            <span>{posting.status} | {posting.createdAt}</span>
+                            <span>{posting.status} | {formatLocalDateTime(posting.createdAt)}</span>
                           </div>
                           <StatusBadge tone={posting.status === "active" ? "success" : "neutral"}>
                             {posting.matchCount ?? 0} matches
@@ -2077,6 +2193,86 @@ export const App = () => {
 
               <section className="surface-card full">
                 <div className="panel-heading">
+                  <LockKeyhole size={19} />
+                  <h2>Password</h2>
+                </div>
+                <form className="form-stack profile-form" onSubmit={changePassword}>
+                  <label className="field">
+                    <span>Current password</span>
+                    <div className="input-with-icon">
+                      <LockKeyhole size={18} />
+                      <input
+                        autoComplete="current-password"
+                        type="password"
+                        value={currentPassword}
+                        onChange={(event) => setCurrentPassword(event.target.value)}
+                      />
+                    </div>
+                  </label>
+                  <label className="field">
+                    <span>New password</span>
+                    <div className="input-with-icon">
+                      <LockKeyhole size={18} />
+                      <input
+                        autoComplete="new-password"
+                        type="password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        placeholder="12+ chars, mixed case, number"
+                      />
+                    </div>
+                  </label>
+                  <label className="field">
+                    <span>Retype new password</span>
+                    <div className="input-with-icon">
+                      <LockKeyhole size={18} />
+                      <input
+                        autoComplete="new-password"
+                        type="password"
+                        value={newPasswordConfirmation}
+                        onChange={(event) => setNewPasswordConfirmation(event.target.value)}
+                        placeholder="Retype new password"
+                      />
+                    </div>
+                  </label>
+                  <div className="password-rules" aria-live="polite">
+                    {Object.entries(passwordRuleLabels).map(([rule, label]) => {
+                      const satisfied = newPasswordChecks[rule as keyof typeof newPasswordChecks];
+                      return (
+                        <span className={satisfied ? "satisfied" : ""} key={rule}>
+                          {satisfied ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                          {label}
+                        </span>
+                      );
+                    })}
+                    <span className={newPasswordsMatch ? "satisfied" : ""}>
+                      {newPasswordsMatch ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                      Passwords match
+                    </span>
+                  </div>
+                  <button className="primary-button" disabled={passwordChangeStatus === "loading"} type="submit">
+                    {passwordChangeStatus === "loading" ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
+                    Change password
+                  </button>
+                </form>
+
+                {passwordChangeStatus === "success" && (
+                  <div className="notice success">
+                    <CheckCircle2 size={18} />
+                    <span>Password updated.</span>
+                  </div>
+                )}
+
+                {passwordChangeStatus === "error" && (
+                  <div className="notice error">
+                    <AlertCircle size={18} />
+                    <span>{passwordChangeError}</span>
+                  </div>
+                )}
+              </section>
+
+              <section className="surface-card full">
+                <div className="panel-heading">
                   <Archive size={19} />
                   <h2>Resume Versions</h2>
                 </div>
@@ -2154,7 +2350,7 @@ export const App = () => {
                             Download
                           </button>
                         </div>
-                        <p>{Math.ceil(resume.characterCount / 1000)}k chars | {resume.createdAt}</p>
+                        <p>{Math.ceil(resume.characterCount / 1000)}k chars | {formatLocalDateTime(resume.createdAt)}</p>
                       </article>
                     ))
                   )}
@@ -2175,6 +2371,8 @@ export const App = () => {
                 onConvertToApplication={(job) => convertCandidateAssessmentToApplication(job)}
                 onScheduleMeeting={openMeetingInvite}
                 onSaveInterviewQuestions={(job, questions) => saveInterviewQuestions(job, questions)}
+                canUseJob={user.role === "admin" ? undefined : hasNewerResumeForJob}
+                useJobLabel={user.role === "admin" ? undefined : "Re-analyze with latest resume"}
               />
             </div>
           )}
@@ -2184,8 +2382,8 @@ export const App = () => {
               <div className="empty-mark">
                 <Loader2 className="spin" size={34} />
               </div>
-              <h2>Analyzing resume</h2>
-              <p>Parsing, embedding, storing evidence, and generating a recommendation.</p>
+              <h2>Checking your fit</h2>
+              <p>Reviewing your resume against the role and preparing your application summary.</p>
             </div>
           )}
 
@@ -2209,7 +2407,7 @@ export const App = () => {
                 <div className="summary-text">
                   <p>{result.analysis.candidateSummary}</p>
                   <span>
-                    Job #{result.job.id} | {result.job.applicationDate} |{" "}
+                    Job #{result.job.id} | {formatLocalDate(result.job.applicationDate)} |{" "}
                     {result.resumeStats.fileName} | {result.resumeStats.chunkCount} chunks |{" "}
                     {redactionTotalLabel(result.privacyRedaction.total)} |{" "}
                     {result.models.embedding}
@@ -2231,7 +2429,7 @@ export const App = () => {
                 icon={<BriefcaseBusiness size={17} />}
                 label="Job"
                 value={result.job.jobTitle}
-                caption={result.job.applicationDate}
+                caption={formatLocalDate(result.job.applicationDate)}
               />
               <MetricTile
                 icon={<Database size={17} />}
@@ -2249,7 +2447,7 @@ export const App = () => {
                 icon={<Clock3 size={17} />}
                 label="Status"
                 value={result.job.status}
-                caption={result.job.updatedAt}
+                caption={formatLocalDateTime(result.job.updatedAt)}
               />
 
               <HREvaluationDetails analysis={result.analysis} />

@@ -193,6 +193,39 @@ test.describe.serial("Roos account and profile flows", () => {
     expect((await userDownload).suggestedFilename()).toBe("resume-v2.md");
   });
 
+  test("lets users change their password from the profile page", async ({ page }) => {
+    const email = uniqueEmail("e2e-password");
+    const oldPassword = "SecurePass123";
+    const newPassword = "ChangedPass123";
+
+    await page.goto("/");
+    await page.getByRole("button", { name: "Register" }).click();
+    await page.getByPlaceholder("Jane Doe").fill("Password Change Candidate");
+    await page.getByPlaceholder("jane@example.com").fill(email);
+    await page.getByPlaceholder("12+ chars, mixed case, number").fill(oldPassword);
+    await page.getByPlaceholder("Retype account password").fill(oldPassword);
+    await page.getByRole("button", { name: "Create account" }).click();
+
+    await page.getByRole("button", { name: "Profile" }).first().click();
+    await expect(page.getByRole("heading", { name: "Password" })).toBeVisible();
+    await page.getByLabel("Current password", { exact: true }).fill(oldPassword);
+    await page.getByLabel("New password", { exact: true }).fill(newPassword);
+    await page.getByLabel("Retype new password", { exact: true }).fill(newPassword);
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByText("Password updated.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Login" }).click();
+    await page.getByPlaceholder("admin@example.com").fill(email);
+    await page.getByPlaceholder("Account password").fill(oldPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByText("Invalid email or password.")).toBeVisible();
+
+    await page.getByPlaceholder("Account password").fill(newPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("heading", { name: "My Applications" })).toBeVisible();
+  });
+
   test("guides users without a resume to upload before applying", async ({ page }) => {
     const email = uniqueEmail("e2e-no-resume");
 
@@ -214,6 +247,98 @@ test.describe.serial("Roos account and profile flows", () => {
     await expect(page).toHaveURL(/\/profile$/);
     await expect(page.getByRole("heading", { name: "Resume Versions" })).toBeVisible();
     await expect(page.getByText(/Upload a resume before applying to/)).toBeVisible();
+  });
+
+  test("shows re-analysis only after a newer resume is uploaded", async ({ page, request }) => {
+    test.skip(!process.env.DATABASE_URL, "DATABASE_URL is required to seed application history.");
+
+    const email = uniqueEmail("e2e-reanalysis");
+    const password = "SecurePass123";
+    const postingTitle = `E2E Reanalysis Role ${Date.now()}`;
+
+    const registration = await request.post("/api/register", {
+      data: {
+        name: "Reanalysis Candidate",
+        email,
+        password,
+        passwordConfirmation: password
+      }
+    });
+    expect(registration.status()).toBe(201);
+    const session = await registration.json();
+    await seedResumeVersion({ userId: session.user.id, fileName: "older-resume.md" });
+
+    const adminLogin = await request.post("/api/login", {
+      data: {
+        email: adminEmail,
+        password: adminPassword
+      }
+    });
+    expect(adminLogin.status()).toBe(200);
+    const adminSession = await adminLogin.json();
+    const postingResponse = await request.post("/api/admin/job-postings", {
+      headers: {
+        Authorization: `Bearer ${adminSession.token}`
+      },
+      data: {
+        title: postingTitle,
+        description: "Backend developer role covering Node.js, PostgreSQL, API integrations, testing, and security.",
+        skills: ["Node.js", "PostgreSQL", "testing"]
+      }
+    });
+    expect(postingResponse.status()).toBe(201);
+    const { jobPosting } = await postingResponse.json();
+
+    await seedCompletedApplication({
+      userId: session.user.id,
+      jobTitle: postingTitle,
+      jobDescription: jobPosting.description,
+      resumeFileName: "older-resume.md",
+      jobPostingId: jobPosting.id
+    });
+
+    const duplicateApplication = await request.post("/api/analyze/latest", {
+      headers: {
+        Authorization: `Bearer ${session.token}`
+      },
+      data: {
+        jobPostingId: jobPosting.id,
+        applicationDate: "2026-06-15"
+      }
+    });
+    expect(duplicateApplication.status()).toBe(409);
+    await expect(duplicateApplication.json()).resolves.toMatchObject({
+      error: "Upload a new resume version before applying to this role again."
+    });
+
+    await page.goto("/");
+    await signIn(page, email, password);
+    await expect(page).toHaveURL(/\/applications$/);
+
+    await page.getByRole("button", { name: "Jobs", exact: true }).click();
+    await page
+      .getByPlaceholder("appointment scheduling, client intake, anaesthetic monitoring...")
+      .fill(postingTitle);
+    const postingCard = page.locator(".posting-card").filter({ hasText: postingTitle });
+    await expect(postingCard.getByRole("button", { name: "View application" })).toBeVisible();
+    await expect(postingCard.getByRole("button", { name: "Re-analyze with latest resume" })).toHaveCount(0);
+
+    await postingCard.getByRole("button", { name: "View application" }).click();
+    await expect(page).toHaveURL(/\/applications$/);
+    await expect(page.locator(".application-card").filter({ hasText: postingTitle }).getByText("Candidate summary")).toBeVisible();
+
+    await page.getByRole("button", { name: "Profile" }).click();
+    const uploadInput = page.locator('input[type="file"]').last();
+    await uploadInput.setInputFiles(resumeFixture);
+    await page.getByRole("button", { name: "Upload new version" }).click();
+    await expect(page.getByText("Resume version saved without replacing previous versions.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Jobs", exact: true }).click();
+    await page
+      .getByPlaceholder("appointment scheduling, client intake, anaesthetic monitoring...")
+      .fill(postingTitle);
+    await expect(postingCard.getByRole("button", { name: "Re-analyze with latest resume" })).toBeVisible();
+    await expect(postingCard.getByRole("button", { name: "View application" })).toHaveCount(0);
   });
 
   test("persists themes, loads additional pages, and keeps candidate picker keyboard accessible", async ({ page }) => {

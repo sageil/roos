@@ -49,6 +49,16 @@ type ExistsRow = {
   exists: boolean;
 };
 
+type LatestApplicationRow = {
+  id: number;
+  created_at: string;
+};
+
+export type LatestApplicationForPosting = {
+  id: number;
+  createdAt: string;
+};
+
 type AnalysisCacheRow = {
   cache_key: string;
   resume_hash: string;
@@ -235,6 +245,22 @@ export const hasJobForUserPosting = async ({
     );
 
     return result.rows[0]?.exists ?? false;
+  });
+
+export const getLatestApplicationForUserPosting = async ({
+  userId,
+  jobPostingId
+}: {
+  userId: number;
+  jobPostingId: number;
+}): Promise<LatestApplicationForPosting | undefined> =>
+  withPostgres(async () => {
+    const result = await queryPostgres<LatestApplicationRow>(
+      queries.jobs.latestForUserPosting,
+      [userId, jobPostingId]
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, createdAt: row.created_at } : undefined;
   });
 
 export const updateJobInterviewQuestions = async ({

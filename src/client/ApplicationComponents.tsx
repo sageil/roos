@@ -44,7 +44,7 @@ import {
   StatusBadge
 } from "./CommonComponents";
 import type { Status } from "./appTypes";
-import { evidenceRelevanceLabel } from "./appUtils";
+import { evidenceRelevanceLabel, formatLocalDate } from "./appUtils";
 
 export const ApplicationMeta = ({
   label,
@@ -349,6 +349,8 @@ export const ApplicationDetailsBody = ({
   job,
   isAdmin,
   onUseJob,
+  canUseJob,
+  useJobLabel,
   onDownloadAssessment,
   onConvertToApplication,
   onScheduleMeeting,
@@ -357,93 +359,100 @@ export const ApplicationDetailsBody = ({
   job: JobRecord;
   isAdmin: boolean;
   onUseJob?: (job: JobRecord) => void;
+  canUseJob?: (job: JobRecord) => boolean;
+  useJobLabel?: string;
   onDownloadAssessment?: (job: JobRecord) => void;
   onConvertToApplication?: (job: JobRecord) => Promise<void> | void;
   onScheduleMeeting?: (job: JobRecord) => void;
   onSaveInterviewQuestions?: (job: JobRecord, questions: string[]) => Promise<void> | void;
-}) => (
-  <div className="application-details">
-    <div className="application-meta-grid">
-      <ApplicationMeta label="Posting" value={job.jobPostingTitle} />
-      <ApplicationMeta label="Resume" value={job.resumeFileName} />
-      <ApplicationMeta label="Resume size" value={job.characterCount ? `${job.characterCount} chars` : undefined} />
-    </div>
+}) => {
+  const showUseJob = Boolean(onUseJob && (!canUseJob || canUseJob(job)));
+  const useJobButtonLabel = isAdmin ? "Assess a candidate" : useJobLabel ?? "Re-analyze with latest resume";
 
-    {job.analysis && (
-      <ApplicationAnalysisDetails
-        analysis={job.analysis}
-        isAdmin={isAdmin}
-        onSaveInterviewQuestions={
-          isAdmin && onSaveInterviewQuestions
-            ? (questions) => onSaveInterviewQuestions(job, questions)
-            : undefined
-        }
-      />
-    )}
-
-    {job.llmRecommendation && (
-      <section className="application-detail-block">
-        <h3>LLM recommendation</h3>
-        <p>{job.llmRecommendation}</p>
-      </section>
-    )}
-
-    {job.jobDescription && (
-      <section className="application-detail-block">
-        <h3>Job description</h3>
-        <p>{job.jobDescription}</p>
-      </section>
-    )}
-
-    {job.errorMessage && (
-      <section className="application-detail-block danger">
-        <h3>Analysis error</h3>
-        <p>{job.errorMessage}</p>
-      </section>
-    )}
-
-    {(onUseJob || (onDownloadAssessment && job.analysis) || onScheduleMeeting || (onConvertToApplication && job.analysisKind === "candidate_assessment")) && (
-      <div className="application-actions">
-        {onUseJob && (
-          <button className={isAdmin ? "assess-candidate-button application-action" : "secondary-button application-action"} type="button" onClick={() => onUseJob(job)}>
-            <Target size={16} />
-            {isAdmin ? "Assess a candidate" : "Use for new analysis"}
-          </button>
-        )}
-        {onDownloadAssessment && job.analysis && (
-          <button
-            className="assessment-toolbar-button application-action"
-            type="button"
-            onClick={() => onDownloadAssessment(job)}
-          >
-            <Download size={16} />
-            Download assessment
-          </button>
-        )}
-        {onScheduleMeeting && (
-          <button
-            className="assessment-toolbar-button application-action"
-            type="button"
-            onClick={() => onScheduleMeeting(job)}
-          >
-            <Clock3 size={16} />
-            Schedule meeting
-          </button>
-        )}
-        {onConvertToApplication && job.analysisKind === "candidate_assessment" && (
-          <button
-            className="convert-application-button application-action"
-            type="button"
-            onClick={() => onConvertToApplication(job)}
-          >
-            <CheckCircle2 size={16} />
-            Convert to application
-          </button>
-        )}
+  return (
+    <div className="application-details">
+      <div className="application-meta-grid">
+        <ApplicationMeta label="Posting" value={job.jobPostingTitle} />
+        <ApplicationMeta label="Resume" value={job.resumeFileName} />
+        <ApplicationMeta label="Resume size" value={job.characterCount ? `${job.characterCount} chars` : undefined} />
       </div>
-    )}
-  </div>
-);
+
+      {job.analysis && (
+        <ApplicationAnalysisDetails
+          analysis={job.analysis}
+          isAdmin={isAdmin}
+          onSaveInterviewQuestions={
+            isAdmin && onSaveInterviewQuestions
+              ? (questions) => onSaveInterviewQuestions(job, questions)
+              : undefined
+          }
+        />
+      )}
+
+      {job.llmRecommendation && (
+        <section className="application-detail-block">
+          <h3>LLM recommendation</h3>
+          <p>{job.llmRecommendation}</p>
+        </section>
+      )}
+
+      {job.jobDescription && (
+        <section className="application-detail-block">
+          <h3>Job description</h3>
+          <p>{job.jobDescription}</p>
+        </section>
+      )}
+
+      {job.errorMessage && (
+        <section className="application-detail-block danger">
+          <h3>Analysis error</h3>
+          <p>{job.errorMessage}</p>
+        </section>
+      )}
+
+      {(showUseJob || (onDownloadAssessment && job.analysis) || onScheduleMeeting || (onConvertToApplication && job.analysisKind === "candidate_assessment")) && (
+        <div className="application-actions">
+          {showUseJob && onUseJob && (
+            <button className={isAdmin ? "assess-candidate-button application-action" : "secondary-button application-action"} type="button" onClick={() => onUseJob(job)}>
+              <Target size={16} />
+              {useJobButtonLabel}
+            </button>
+          )}
+          {onDownloadAssessment && job.analysis && (
+            <button
+              className="assessment-toolbar-button application-action"
+              type="button"
+              onClick={() => onDownloadAssessment(job)}
+            >
+              <Download size={16} />
+              Download assessment
+            </button>
+          )}
+          {onScheduleMeeting && (
+            <button
+              className="assessment-toolbar-button application-action"
+              type="button"
+              onClick={() => onScheduleMeeting(job)}
+            >
+              <Clock3 size={16} />
+              Schedule meeting
+            </button>
+          )}
+          {onConvertToApplication && job.analysisKind === "candidate_assessment" && (
+            <button
+              className="convert-application-button application-action"
+              type="button"
+              onClick={() => onConvertToApplication(job)}
+            >
+              <CheckCircle2 size={16} />
+              Convert to application
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ProfileApplications = ({
   jobs,
@@ -451,6 +460,8 @@ export const ProfileApplications = ({
   hasMore,
   isAdmin,
   onUseJob,
+  canUseJob,
+  useJobLabel,
   onLoadMore,
   onDownloadAssessment,
   onConvertToApplication,
@@ -462,6 +473,8 @@ export const ProfileApplications = ({
   hasMore: boolean;
   isAdmin: boolean;
   onUseJob: (job: JobRecord) => void;
+  canUseJob?: (job: JobRecord) => boolean;
+  useJobLabel?: string;
   onLoadMore: () => void;
   onDownloadAssessment?: (job: JobRecord) => void;
   onConvertToApplication?: (job: JobRecord) => Promise<void> | void;
@@ -504,7 +517,7 @@ export const ProfileApplications = ({
                   <span className="application-title">
                     <strong>{job.jobTitle}</strong>
                     <span>
-                      {job.applicationDate} | {job.status}
+                      {formatLocalDate(job.applicationDate)} | {job.status}
                       {job.jobPostingTitle ? ` | ${job.jobPostingTitle}` : ""}
                     </span>
                     {isAdmin && job.userEmail && (
@@ -526,6 +539,8 @@ export const ProfileApplications = ({
                     job={job}
                     isAdmin={isAdmin}
                     onUseJob={onUseJob}
+                    canUseJob={canUseJob}
+                    useJobLabel={useJobLabel}
                     onDownloadAssessment={isAdmin ? onDownloadAssessment : undefined}
                     onConvertToApplication={isAdmin ? onConvertToApplication : undefined}
                     onScheduleMeeting={isAdmin ? onScheduleMeeting : undefined}
