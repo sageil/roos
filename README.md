@@ -235,3 +235,7 @@ pnpm db:seed:demo
 The demo seed is idempotent and replaces only its owned rows. It creates users for a veterinary technician, veterinarian, front desk receptionist, and accountant, plus matching active job postings. Demo user accounts share `DemoUserPassword123` unless `DEMO_USER_PASSWORD` is set.
 
 The host does not need browser binaries installed. The local `pnpm e2e` command is still available for developer machines with Playwright browsers installed and targets `https://127.0.0.1:8787` by default. Override with `E2E_BASE_URL` when testing another host.
+
+## License
+
+AGPL-3.0-only. See [LICENSE](./LICENSE).
