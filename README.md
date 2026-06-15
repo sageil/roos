@@ -4,6 +4,8 @@
 
 Roos is a self-hosted resume screening app. Candidates can upload resume versions, apply to roles, and review their own applications. Hiring teams can create roles, compare candidates against those roles, and review structured application summaries.
 
+Watch the demo video: [Roos demo on YouTube](https://youtu.be/OLbnwShWIG8).
+
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue.svg)](./LICENSE)
 
 ## What Roos Does
