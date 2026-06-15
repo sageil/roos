@@ -33,6 +33,7 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 - LM Studio embeddings are expected at host URL `http://127.0.0.1:1234`.
 - Docker reaches LM Studio through `http://host.docker.internal:1234/v1`.
 - Default embedding model: `text-embedding-nomic-embed-text-v1.5-embedding`.
+- Default embedding dimensions: `768`.
 - OpenAI-compatible local providers can use `not-needed` as the API key.
 - If the LLM provider does not support the Responses API, set `LLM_API_STYLE=chat`.
 
@@ -40,6 +41,9 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
 
 - PostgreSQL is the source of truth for users, sessions, jobs, job postings, resume versions, analysis metadata, and embeddings.
 - pgvector is used for embedding storage and matching.
+- `user_match_profiles` stores one searchable semantic profile per user, built from the latest resume plus application and analysis context.
+- Admin semantic user profiles use `vector(768)` for `text-embedding-nomic-embed-text-v1.5-embedding`; changing embedding dimensions requires a matching schema migration and index rebuild.
+- Admin user search embeds the search phrase, queries `match_user_match_profiles(...)`, and ranks matching users through a pgvector IVFFlat index while preserving exact text search as fallback.
 - Analysis cache entries are stored in PostgreSQL.
 - The app connects with the restricted `APP_DB_USER`; it must not connect as the Postgres superuser.
 
@@ -54,6 +58,7 @@ browser -> nginx:443/TLS -> app-1:8787 / app-2:8787 -> postgres:5432
   - `sql/sessions/`
   - `sql/resume_versions/`
   - `sql/resume_chunks/`
+  - `sql/user_match_profiles/`
   - `sql/analysis_cache/`
   - `sql/admin/`
 

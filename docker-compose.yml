@@ -13,7 +13,7 @@ x-app-environment: &app-environment
   EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-not-needed}
   EMBEDDING_BASE_URL: http://host.docker.internal:1234/v1
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
-  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
   APP_INSTANCE_URLS: ${APP_INSTANCE_URLS:-app-1=http://app-1:8787/api/instance-health,app-2=http://app-2:8787/api/instance-health}
 
 x-app-common: &app-common

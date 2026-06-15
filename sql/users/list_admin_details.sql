@@ -10,6 +10,9 @@ SELECT
   COALESCE(matched_terms.terms, ARRAY[]::text[]) AS matched_terms
 FROM users u
 LEFT JOIN LATERAL (
+  SELECT array_position($2::bigint[], u.id) AS rank
+) semantic_match ON true
+LEFT JOIN LATERAL (
   SELECT COUNT(*)::int AS application_count
   FROM jobs j
   WHERE j.user_id = u.id
@@ -86,6 +89,7 @@ LEFT JOIN LATERAL (
 ) matched_terms ON true
 WHERE
   COALESCE($1::text, '') = ''
+  OR u.id = ANY($2::bigint[])
   OR u.name ILIKE '%' || $1 || '%'
   OR u.email ILIKE '%' || $1 || '%'
   OR EXISTS (
@@ -111,5 +115,9 @@ WHERE
         )
       )
   )
-ORDER BY u.created_at DESC, u.id DESC
-LIMIT $2;
+ORDER BY
+  CASE WHEN semantic_match.rank IS NULL THEN 1 ELSE 0 END,
+  semantic_match.rank NULLS LAST,
+  u.created_at DESC,
+  u.id DESC
+LIMIT $3;

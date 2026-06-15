@@ -17,6 +17,7 @@ A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI te
 - Users have a dedicated login page and profile page.
 - Profile resume uploads are versioned append-only records; uploading a new resume never replaces earlier versions.
 - Admins have a dedicated jobs page to create postings, enter required skills as tags, and review candidate matches.
+- Admins can search users by exact profile/application text and by semantic skill meaning using pgvector IVFFlat-backed user match profiles.
 - Admins have a system health page for PostgreSQL, pgvector, provider configuration, and each app instance behind Nginx.
 - Chunks the resume, embeds the chunks, stores vectors in PostgreSQL with pgvector, and ranks the strongest evidence.
 - Generates an HR-style structured analysis with fit score, requirement assessment, score breakdown, fairness review, strengths, gaps, risks, and prioritized recommendations.
@@ -98,12 +99,14 @@ The app creates the `vector` extension and required tables on startup.
 
 Database SQL is kept outside the TypeScript store:
 
-- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, and `match_resume_chunks(...)`.
+- `sql/migrations/001_init.sql` creates the pgvector extension, tables, analysis cache, indexes, `match_resume_chunks(...)`, and `match_user_match_profiles(...)`.
 - `sql/analysis_cache/*.sql` contains cached analysis lookup and upsert queries.
 - `sql/jobs/*.sql` contains job CRUD queries.
 - `sql/users/*.sql` and `sql/sessions/*.sql` contain account, role, and session queries.
 - `sql/resume_versions/*.sql` contains versioned profile resume upload queries.
 - `sql/resume_chunks/*.sql` contains embedding upserts and vector search calls.
+- `sql/user_match_profiles/*.sql` contains semantic admin user search profile refresh and matching calls.
+- Admin semantic user search stores `text-embedding-nomic-embed-text-v1.5-embedding` profiles as `vector(768)` so pgvector can use IVFFlat.
 
 Admin seeding is controlled by:
 
@@ -181,6 +184,7 @@ For an OpenAI-compatible embeddings provider:
 EMBEDDING_BASE_URL=http://127.0.0.1:1234/v1
 EMBEDDING_API_KEY=not-needed
 EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5-embedding
+EMBEDDING_DIMENSIONS=768
 ```
 
 If your LLM provider does not support the Responses API, use:

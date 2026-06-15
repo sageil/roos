@@ -169,7 +169,9 @@ describe("userStore", () => {
       }]
     });
 
-    await expect(listAdminUserDetails({ search: " postgres ", limit: 25 })).resolves.toEqual([
+    await expect(
+      listAdminUserDetails({ search: " postgres ", semanticUserIds: [7, 9], limit: 25 })
+    ).resolves.toEqual([
       {
         id: 7,
         name: "Ada Lovelace",
@@ -202,7 +204,7 @@ describe("userStore", () => {
         ]
       }
     ]);
-    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["postgres", 25]);
+    expect(queryPostgres).toHaveBeenCalledWith("users.listAdminDetails", ["postgres", [7, 9], 25]);
   });
 
   it("upserts an admin with normalized email", async () => {

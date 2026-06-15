@@ -143,13 +143,16 @@ export const listUsers = async (limit = 100): Promise<AdminUserRecord[]> => {
 
 export const listAdminUserDetails = async ({
   search = "",
+  semanticUserIds = [],
   limit = 100
 }: {
   search?: string;
+  semanticUserIds?: number[];
   limit?: number;
 } = {}): Promise<AdminUserDetailRecord[]> => {
   const result = await queryPostgres<AdminUserDetailRow>(queries.users.listAdminDetails, [
     search.trim(),
+    semanticUserIds,
     limit
   ]);
 

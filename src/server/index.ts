@@ -14,6 +14,7 @@ import { createResumeVersion, listResumeVersions } from "./resumeVersionStore.js
 import { createSession, deleteSession, findUserBySessionToken } from "./sessions.js";
 import { buildSystemHealth, localInstanceHealth } from "./systemHealth.js";
 import { extractResumeText } from "./textExtraction.js";
+import { matchAdminUsersBySemanticQuery, refreshUserMatchProfile } from "./userMatchProfiles.js";
 import {
   createUser,
   findUserByEmail,
@@ -136,6 +137,16 @@ const requireAdmin: express.RequestHandler = (request, response, next) => {
   next();
 };
 
+const refreshUserMatchProfileAfterWrite = (userId: number) => {
+  void refreshUserMatchProfile(userId).catch((error) => {
+    console.warn(
+      `User match profile refresh failed for user ${userId}: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+  });
+};
+
 app.get("/api/health", async (_request, response) => {
   let postgres: { ok: boolean; extension: string; error?: string };
   try {
@@ -237,6 +248,7 @@ app.patch("/api/profile", requireAuth, async (request, response) => {
       email: body.email
     });
 
+    refreshUserMatchProfileAfterWrite(user.id);
     response.json({ user: updatedUser });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Profile update failed.";
@@ -272,6 +284,7 @@ app.post("/api/resumes", requireAuth, upload.single("resume"), async (request, r
       resumeText
     });
 
+    refreshUserMatchProfileAfterWrite(user.id);
     response.status(201).json({ resume });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Resume upload failed.";
@@ -298,9 +311,25 @@ app.get("/api/admin/overview", requireAuth, requireAdmin, async (_request, respo
 
 app.get("/api/admin/users", requireAuth, requireAdmin, async (request, response) => {
   const query = adminUsersQuerySchema.parse(request.query);
+  const search = query.search ?? "";
+  let semanticUserIds: number[] = [];
+
+  try {
+    semanticUserIds = (await matchAdminUsersBySemanticQuery(search, query.limit ?? 100)).map(
+      (match) => match.userId
+    );
+  } catch (error) {
+    console.warn(
+      `Admin semantic user search failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
+  }
+
   response.json({
     users: await listAdminUserDetails({
-      search: query.search ?? "",
+      search,
+      semanticUserIds,
       limit: query.limit ?? 100
     })
   });
@@ -377,6 +406,7 @@ app.post("/api/analyze", requireAuth, upload.single("resume"), async (request, r
 
       await completeJob({ id: jobId, analysis, chunkCount });
       job = await getJob({ id: jobId, userId: user.id, role: user.role });
+      refreshUserMatchProfileAfterWrite(user.id);
 
       response.json({
         job,

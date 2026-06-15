@@ -159,6 +159,18 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_match_profiles (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  profile_text TEXT NOT NULL,
+  embedding vector(768) NOT NULL,
+  embedding_model TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE user_match_profiles
+  ALTER COLUMN embedding TYPE vector(768)
+  USING embedding::vector(768);
+
 CREATE INDEX IF NOT EXISTS resume_chunks_job_id_idx ON resume_chunks(job_id);
 CREATE INDEX IF NOT EXISTS jobs_user_id_idx ON jobs(user_id);
 CREATE INDEX IF NOT EXISTS jobs_job_posting_id_idx ON jobs(job_posting_id);
@@ -167,6 +179,9 @@ CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS resume_versions_user_id_idx ON resume_versions(user_id);
 CREATE INDEX IF NOT EXISTS analysis_cache_models_idx ON analysis_cache(llm_model, embedding_model);
+CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_model_idx ON user_match_profiles(embedding_model);
+CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_ivfflat_idx
+  ON user_match_profiles USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 CREATE OR REPLACE FUNCTION match_resume_chunks(
   target_job_id BIGINT,
@@ -188,5 +203,26 @@ AS $$
   FROM resume_chunks rc
   WHERE rc.job_id = target_job_id
   ORDER BY rc.embedding <=> query_embedding
+  LIMIT match_count
+$$;
+
+CREATE OR REPLACE FUNCTION match_user_match_profiles(
+  query_embedding vector(768),
+  target_embedding_model TEXT,
+  match_count INTEGER
+)
+RETURNS TABLE (
+  user_id BIGINT,
+  score DOUBLE PRECISION
+)
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT
+    ump.user_id,
+    1 - (ump.embedding <=> query_embedding) AS score
+  FROM user_match_profiles ump
+  WHERE ump.embedding_model = target_embedding_model
+  ORDER BY ump.embedding <=> query_embedding
   LIMIT match_count
 $$;

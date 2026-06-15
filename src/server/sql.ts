@@ -59,6 +59,11 @@ export const queries = {
     upsert: loadSql("resume_chunks", "upsert.sql"),
     match: loadSql("resume_chunks", "match.sql")
   },
+  userMatchProfiles: {
+    source: loadSql("user_match_profiles", "source.sql"),
+    upsert: loadSql("user_match_profiles", "upsert.sql"),
+    match: loadSql("user_match_profiles", "match.sql")
+  },
   transactions: {
     advisoryLock: loadSql("transactions", "advisory_lock.sql"),
     advisoryUnlock: loadSql("transactions", "advisory_unlock.sql"),
