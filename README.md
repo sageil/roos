@@ -2,6 +2,12 @@
 
 A TypeScript resume analyzer with a React front end, Node/Express API, OpenAI text analysis, and configurable OpenAI-compatible embedding models.
 
+## Project Docs
+
+- Product requirements: `docs/requirements.md`
+- Architecture: `docs/architecture.md`
+- Agent workflow notes: `AGENT.md`
+
 ## What it does
 
 - Uploads resumes as `.pdf`, `.docx`, `.txt`, or `.md`.
