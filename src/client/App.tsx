@@ -41,6 +41,7 @@ import type {
   LoginResponse,
   ProfileResponse,
   RegisterResponse,
+  RequirementAssessment,
   ResumeAnalysis,
   ResumeVersionRecord,
   SystemHealthResponse,
@@ -250,6 +251,47 @@ const scoreBreakdownEntries = (analysis: ResumeAnalysis) => {
   ] as const;
 };
 
+const requirementCategoryLabel = (category: RequirementAssessment["category"]) => {
+  const labels: Record<RequirementAssessment["category"], string> = {
+    minimum: "Minimum qualification",
+    role_competency: "Role competency",
+    domain: "Domain experience",
+    preferred: "Preferred",
+    seniority: "Seniority/scope"
+  };
+
+  return labels[category];
+};
+
+const requirementImportanceLabel = (importance: RequirementAssessment["importance"]) => {
+  const labels: Record<RequirementAssessment["importance"], string> = {
+    must_have: "Must-have",
+    preferred: "Preferred"
+  };
+
+  return labels[importance];
+};
+
+const requirementStatusLabel = (status: RequirementAssessment["status"]) => {
+  const labels: Record<RequirementAssessment["status"], string> = {
+    met: "Met",
+    partially_met: "Partially met",
+    not_evidenced: "Not evidenced"
+  };
+
+  return labels[status];
+};
+
+const requirementStatusTone = (status: RequirementAssessment["status"]) => {
+  const tones: Record<RequirementAssessment["status"], "met" | "partial" | "missing"> = {
+    met: "met",
+    partially_met: "partial",
+    not_evidenced: "missing"
+  };
+
+  return tones[status];
+};
+
 const HREvaluationDetails = ({
   analysis,
   compact = false
@@ -288,7 +330,13 @@ const HREvaluationDetails = ({
               <article className="requirement-assessment-row" key={`${item.category}-${item.requirement}`}>
                 <div>
                   <strong>{item.requirement}</strong>
-                  <span>{item.category} | {item.importance} | {item.status}</span>
+                  <div className="requirement-chip-row" aria-label="Requirement metadata">
+                    <span className="requirement-chip category">{requirementCategoryLabel(item.category)}</span>
+                    <span className="requirement-chip importance">{requirementImportanceLabel(item.importance)}</span>
+                    <span className={`requirement-chip status ${requirementStatusTone(item.status)}`}>
+                      {requirementStatusLabel(item.status)}
+                    </span>
+                  </div>
                 </div>
                 <p>{item.rationale}</p>
                 {item.evidence.length > 0 && (

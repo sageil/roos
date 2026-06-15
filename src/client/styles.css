@@ -1268,10 +1268,49 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.requirement-assessment-row span {
+.requirement-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.requirement-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 9px;
+  color: var(--launch-brown);
+  background: #fffaf5;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.requirement-chip.importance {
+  border-color: #f5ae6d;
   color: var(--primary);
-  font-size: 12px;
-  font-weight: 800;
+  background: #fff3e7;
+}
+
+.requirement-chip.status.met {
+  border-color: #b8d7a8;
+  color: #37601f;
+  background: #f1faeb;
+}
+
+.requirement-chip.status.partial {
+  border-color: #f5ae6d;
+  color: var(--amber);
+  background: #fff7ed;
+}
+
+.requirement-chip.status.missing {
+  border-color: #f0b7a0;
+  color: var(--danger);
+  background: #fff1ea;
 }
 
 .requirement-assessment-row p,
