@@ -1,6 +1,7 @@
 WITH search_input AS (
   SELECT
     query.raw_query,
+    GREATEST(($5::int + $6::int) * 5, 100) AS candidate_limit,
     CASE
       WHEN query.raw_query IS NULL THEN NULL
       ELSE websearch_to_tsquery('simple', query.raw_query)
@@ -17,7 +18,64 @@ WITH search_input AS (
     SELECT NULLIF(trim($3::text), '') AS raw_query
   ) query
 ),
-scored_jobs AS (
+bm25_candidates AS (
+  SELECT
+    j.id,
+    -(
+      (
+        repeat(COALESCE(j.job_title, '') || ' ', 8) ||
+        repeat(COALESCE(j.resume_file_name, '') || ' ', 2) ||
+        COALESCE(j.job_description, '') || ' ' ||
+        COALESCE(j.llm_recommendation, '') || ' ' ||
+        COALESCE(j.analysis_json::text, '')
+      ) <@> to_bm25query(search_input.raw_query, 'jobs_bm25_search_idx')
+    ) AS bm25_rank
+  FROM jobs j
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NOT NULL
+    AND (
+      $1::text = 'admin'
+      OR (
+        j.user_id = $2
+        AND j.analysis_kind = 'application'
+      )
+    )
+  ORDER BY
+    (
+      repeat(COALESCE(j.job_title, '') || ' ', 8) ||
+      repeat(COALESCE(j.resume_file_name, '') || ' ', 2) ||
+      COALESCE(j.job_description, '') || ' ' ||
+      COALESCE(j.llm_recommendation, '') || ' ' ||
+      COALESCE(j.analysis_json::text, '')
+    ) <@> to_bm25query(search_input.raw_query, 'jobs_bm25_search_idx')
+  LIMIT (SELECT candidate_limit FROM search_input)
+),
+semantic_candidates AS (
+  SELECT
+    semantic.job_id AS id,
+    semantic.rank::int AS semantic_rank
+  FROM unnest($4::bigint[]) WITH ORDINALITY AS semantic(job_id, rank)
+),
+candidate_jobs AS (
+  SELECT id FROM bm25_candidates
+  UNION
+  SELECT id FROM semantic_candidates
+  UNION
+  SELECT j.id
+  FROM jobs j
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NULL
+    AND (
+      $1::text = 'admin'
+      OR (
+        j.user_id = $2
+        AND j.analysis_kind = 'application'
+      )
+    )
+),
+scoped_jobs AS (
   SELECT
     j.id,
     j.user_id,
@@ -41,31 +99,18 @@ scored_jobs AS (
     j.created_at,
     j.updated_at,
     search_input.raw_query,
-    array_position($4::bigint[], j.id) AS semantic_rank,
-    CASE
-      WHEN search_input.text_query IS NULL THEN 0::real
-      ELSE
-        COALESCE(ts_rank_cd(search_document.document, search_input.text_query, 32), 0) +
-        COALESCE(ts_rank_cd(search_document.document, search_input.prefix_query, 32), 0)
-    END AS text_rank,
-    CASE
-      WHEN search_input.raw_query IS NULL THEN false
-      ELSE (
-        COALESCE(search_document.document @@ search_input.text_query, false)
-        OR COALESCE(search_document.document @@ search_input.prefix_query, false)
-        OR j.job_title ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(j.job_description, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(j.llm_recommendation, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(j.analysis_json::text, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(j.resume_file_name, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(jp.title, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(u.name, '') ILIKE '%' || search_input.raw_query || '%'
-        OR COALESCE(u.email, '') ILIKE '%' || search_input.raw_query || '%'
-      )
-    END AS text_match
-  FROM jobs j
+    search_input.text_query,
+    search_input.prefix_query,
+    semantic_candidates.semantic_rank,
+    search_document.document,
+    search_document.bm25_text,
+    COALESCE(bm25_candidates.bm25_rank, 0) AS bm25_rank
+  FROM candidate_jobs
+  JOIN jobs j ON j.id = candidate_jobs.id
   LEFT JOIN users u ON u.id = j.user_id
   LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
+  LEFT JOIN bm25_candidates ON bm25_candidates.id = j.id
+  LEFT JOIN semantic_candidates ON semantic_candidates.id = j.id
   CROSS JOIN search_input
   CROSS JOIN LATERAL (
     SELECT
@@ -82,7 +127,18 @@ scored_jobs AS (
         COALESCE(j.job_description, ''),
         COALESCE(j.llm_recommendation, ''),
         COALESCE(j.analysis_json::text, '')
-      )), 'C') AS document
+      )), 'C') AS document,
+      concat_ws(
+        ' ',
+        repeat(COALESCE(j.job_title, '') || ' ', 8),
+        repeat(COALESCE(jp.title, '') || ' ', 5),
+        repeat(COALESCE(u.name, '') || ' ', 3),
+        repeat(COALESCE(u.email, '') || ' ', 3),
+        repeat(COALESCE(j.resume_file_name, '') || ' ', 2),
+        COALESCE(j.job_description, ''),
+        COALESCE(j.llm_recommendation, ''),
+        COALESCE(j.analysis_json::text, '')
+      ) AS bm25_text
   ) search_document
   WHERE
     (
@@ -92,6 +148,28 @@ scored_jobs AS (
         AND j.analysis_kind = 'application'
       )
     )
+),
+scored_jobs AS (
+  SELECT
+    scoped_jobs.*,
+    scoped_jobs.bm25_rank AS text_rank,
+    CASE
+      WHEN scoped_jobs.raw_query IS NULL THEN false
+      ELSE (
+        scoped_jobs.bm25_rank > 0
+        OR COALESCE(scoped_jobs.document @@ scoped_jobs.text_query, false)
+        OR COALESCE(scoped_jobs.document @@ scoped_jobs.prefix_query, false)
+        OR scoped_jobs.job_title ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.job_description, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.llm_recommendation, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.analysis_json::text, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.resume_file_name, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.job_posting_title, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.user_name, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+        OR COALESCE(scoped_jobs.user_email, '') ILIKE '%' || scoped_jobs.raw_query || '%'
+      )
+    END AS text_match
+  FROM scoped_jobs
 ),
 filtered_jobs AS (
   SELECT *

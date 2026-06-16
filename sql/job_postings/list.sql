@@ -1,6 +1,7 @@
 WITH search_input AS (
   SELECT
     query.raw_query,
+    GREATEST(($4::int + $5::int) * 5, 100) AS candidate_limit,
     CASE
       WHEN query.raw_query IS NULL THEN NULL
       ELSE websearch_to_tsquery('simple', query.raw_query)
@@ -17,28 +18,68 @@ WITH search_input AS (
     SELECT NULLIF(trim($2::text), '') AS raw_query
   ) query
 ),
+bm25_candidates AS (
+  SELECT
+    jp.id,
+    -(
+      (
+        repeat(COALESCE(jp.title, '') || ' ', 8) ||
+        repeat(immutable_text_array_to_string(COALESCE(jp.skills, ARRAY[]::text[]), ' ') || ' ', 4) ||
+        COALESCE(jp.description, '')
+      ) <@> to_bm25query(search_input.raw_query, 'job_postings_bm25_search_idx')
+    ) AS bm25_rank
+  FROM job_postings jp
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NOT NULL
+    AND ($1::boolean OR jp.status = 'active')
+  ORDER BY
+    (
+      repeat(COALESCE(jp.title, '') || ' ', 8) ||
+      repeat(immutable_text_array_to_string(COALESCE(jp.skills, ARRAY[]::text[]), ' ') || ' ', 4) ||
+      COALESCE(jp.description, '')
+    ) <@> to_bm25query(search_input.raw_query, 'job_postings_bm25_search_idx')
+  LIMIT (SELECT candidate_limit FROM search_input)
+),
+semantic_candidates AS (
+  SELECT
+    semantic.job_posting_id AS id,
+    semantic.rank::int AS semantic_rank
+  FROM unnest($3::bigint[]) WITH ORDINALITY AS semantic(job_posting_id, rank)
+),
+candidate_postings AS (
+  SELECT id FROM bm25_candidates
+  UNION
+  SELECT id FROM semantic_candidates
+  UNION
+  SELECT jp.id
+  FROM job_postings jp
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NULL
+    AND ($1::boolean OR jp.status = 'active')
+),
 scored_postings AS (
   SELECT
     jp.*,
     search_input.raw_query,
-    array_position($3::bigint[], jp.id) AS semantic_rank,
-    CASE
-      WHEN search_input.text_query IS NULL THEN 0::real
-      ELSE
-        COALESCE(ts_rank_cd(search_document.document, search_input.text_query, 32), 0) +
-        COALESCE(ts_rank_cd(search_document.document, search_input.prefix_query, 32), 0)
-    END AS text_rank,
+    semantic_candidates.semantic_rank,
+    COALESCE(bm25_candidates.bm25_rank, 0) AS text_rank,
     CASE
       WHEN search_input.raw_query IS NULL THEN false
       ELSE (
-        COALESCE(search_document.document @@ search_input.text_query, false)
+        COALESCE(bm25_candidates.bm25_rank, 0) > 0
+        OR COALESCE(search_document.document @@ search_input.text_query, false)
         OR COALESCE(search_document.document @@ search_input.prefix_query, false)
         OR jp.title ILIKE '%' || search_input.raw_query || '%'
         OR jp.description ILIKE '%' || search_input.raw_query || '%'
         OR immutable_text_array_to_string(jp.skills, ' ') ILIKE '%' || search_input.raw_query || '%'
       )
     END AS text_match
-  FROM job_postings jp
+  FROM candidate_postings
+  JOIN job_postings jp ON jp.id = candidate_postings.id
+  LEFT JOIN bm25_candidates ON bm25_candidates.id = jp.id
+  LEFT JOIN semantic_candidates ON semantic_candidates.id = jp.id
   CROSS JOIN search_input
   CROSS JOIN LATERAL (
     SELECT

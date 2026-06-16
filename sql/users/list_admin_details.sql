@@ -1,6 +1,7 @@
 WITH search_input AS (
   SELECT
     query.raw_query,
+    GREATEST(($3::int + $5::int) * 5, 100) AS candidate_limit,
     CASE
       WHEN query.raw_query IS NULL THEN NULL
       ELSE websearch_to_tsquery('simple', query.raw_query)
@@ -17,26 +18,115 @@ WITH search_input AS (
     SELECT NULLIF(trim($1::text), '') AS raw_query
   ) query
 ),
+bm25_user_candidates AS (
+  SELECT
+    u.id,
+    -(
+      (
+        repeat(COALESCE(u.name, '') || ' ', 5) ||
+        repeat(COALESCE(u.email, '') || ' ', 3)
+      ) <@> to_bm25query(search_input.raw_query, 'users_bm25_search_idx')
+    ) AS bm25_rank
+  FROM users u
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NOT NULL
+    AND (
+      $4::bigint IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM jobs assessed
+        WHERE assessed.user_id = u.id
+          AND assessed.job_posting_id = $4::bigint
+          AND assessed.status <> 'failed'
+      )
+    )
+  ORDER BY
+    (
+      repeat(COALESCE(u.name, '') || ' ', 5) ||
+      repeat(COALESCE(u.email, '') || ' ', 3)
+    ) <@> to_bm25query(search_input.raw_query, 'users_bm25_search_idx')
+  LIMIT (SELECT candidate_limit FROM search_input)
+),
+bm25_profile_candidates AS (
+  SELECT
+    ump.user_id AS id,
+    -(ump.profile_text <@> to_bm25query(search_input.raw_query, 'user_match_profiles_bm25_search_idx')) AS bm25_rank
+  FROM user_match_profiles ump
+  JOIN users u ON u.id = ump.user_id
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NOT NULL
+    AND (
+      $4::bigint IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM jobs assessed
+        WHERE assessed.user_id = u.id
+          AND assessed.job_posting_id = $4::bigint
+          AND assessed.status <> 'failed'
+      )
+    )
+  ORDER BY ump.profile_text <@> to_bm25query(search_input.raw_query, 'user_match_profiles_bm25_search_idx')
+  LIMIT (SELECT candidate_limit FROM search_input)
+),
+bm25_candidates AS (
+  SELECT
+    id,
+    MAX(bm25_rank) AS bm25_rank
+  FROM (
+    SELECT * FROM bm25_user_candidates
+    UNION ALL
+    SELECT * FROM bm25_profile_candidates
+  ) candidates
+  GROUP BY id
+),
+semantic_candidates AS (
+  SELECT
+    semantic.user_id AS id,
+    semantic.rank::int AS semantic_rank
+  FROM unnest($2::bigint[]) WITH ORDINALITY AS semantic(user_id, rank)
+),
+candidate_users AS (
+  SELECT id FROM bm25_candidates
+  UNION
+  SELECT id FROM semantic_candidates
+  UNION
+  SELECT u.id
+  FROM users u
+  CROSS JOIN search_input
+  WHERE
+    search_input.raw_query IS NULL
+    AND (
+      $4::bigint IS NULL
+      OR NOT EXISTS (
+        SELECT 1
+        FROM jobs assessed
+        WHERE assessed.user_id = u.id
+          AND assessed.job_posting_id = $4::bigint
+          AND assessed.status <> 'failed'
+      )
+    )
+),
 scored_users AS (
   SELECT
     u.*,
     search_input.raw_query,
-    array_position($2::bigint[], u.id) AS semantic_rank,
-    CASE
-      WHEN search_input.text_query IS NULL THEN 0::real
-      ELSE
-        COALESCE(ts_rank_cd(search_document.document, search_input.text_query, 32), 0) +
-        COALESCE(ts_rank_cd(search_document.document, search_input.prefix_query, 32), 0)
-    END AS text_rank,
+    semantic_candidates.semantic_rank,
+    COALESCE(bm25_candidates.bm25_rank, 0) AS text_rank,
     CASE
       WHEN search_input.raw_query IS NULL THEN false
       ELSE (
-        COALESCE(search_document.document @@ search_input.text_query, false)
+        COALESCE(bm25_candidates.bm25_rank, 0) > 0
+        OR COALESCE(search_document.document @@ search_input.text_query, false)
         OR COALESCE(search_document.document @@ search_input.prefix_query, false)
         OR search_document.raw_text ILIKE '%' || search_input.raw_query || '%'
       )
     END AS text_match
-  FROM users u
+  FROM candidate_users
+  JOIN users u ON u.id = candidate_users.id
+  LEFT JOIN bm25_candidates ON bm25_candidates.id = u.id
+  LEFT JOIN semantic_candidates ON semantic_candidates.id = u.id
   CROSS JOIN search_input
   CROSS JOIN LATERAL (
     SELECT

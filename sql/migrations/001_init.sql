@@ -1,5 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_textsearch;
 
 CREATE OR REPLACE FUNCTION immutable_text_array_to_string(items TEXT[], delimiter TEXT)
 RETURNS TEXT
@@ -386,6 +387,13 @@ CREATE INDEX IF NOT EXISTS jobs_job_description_trgm_idx ON jobs USING gin (job_
 CREATE INDEX IF NOT EXISTS jobs_llm_recommendation_trgm_idx ON jobs USING gin (llm_recommendation gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS jobs_resume_file_name_trgm_idx ON jobs USING gin (resume_file_name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS jobs_analysis_json_trgm_idx ON jobs USING gin ((analysis_json::text) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS jobs_bm25_search_idx ON jobs USING bm25 ((
+  repeat(COALESCE(job_title, '') || ' ', 8) ||
+  repeat(COALESCE(resume_file_name, '') || ' ', 2) ||
+  COALESCE(job_description, '') || ' ' ||
+  COALESCE(llm_recommendation, '') || ' ' ||
+  COALESCE(analysis_json::text, '')
+)) WITH (text_config = 'simple');
 CREATE INDEX IF NOT EXISTS job_postings_status_created_at_idx ON job_postings(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS job_postings_created_at_id_idx ON job_postings(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS job_postings_title_trgm_idx ON job_postings USING gin (title gin_trgm_ops);
@@ -396,9 +404,18 @@ CREATE INDEX IF NOT EXISTS job_postings_search_tsv_idx ON job_postings USING gin
   setweight(to_tsvector('simple', immutable_text_array_to_string(COALESCE(skills, ARRAY[]::text[]), ' ')), 'B') ||
   setweight(to_tsvector('simple', COALESCE(description, '')), 'C')
 ));
+CREATE INDEX IF NOT EXISTS job_postings_bm25_search_idx ON job_postings USING bm25 ((
+  repeat(COALESCE(title, '') || ' ', 8) ||
+  repeat(immutable_text_array_to_string(COALESCE(skills, ARRAY[]::text[]), ' ') || ' ', 4) ||
+  COALESCE(description, '')
+)) WITH (text_config = 'simple');
 CREATE INDEX IF NOT EXISTS users_created_at_id_idx ON users(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS users_name_trgm_idx ON users USING gin (name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS users_email_trgm_idx ON users USING gin (email gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS users_bm25_search_idx ON users USING bm25 ((
+  repeat(COALESCE(name, '') || ' ', 5) ||
+  repeat(COALESCE(email, '') || ' ', 3)
+)) WITH (text_config = 'simple');
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS resume_versions_user_id_idx ON resume_versions(user_id);
@@ -413,6 +430,8 @@ CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_model_idx ON user_match
 CREATE INDEX IF NOT EXISTS user_match_profiles_embedding_ivfflat_idx
   ON user_match_profiles USING ivfflat ((embedding::vector(768)) vector_cosine_ops) WITH (lists = 100)
   WHERE vector_dims(embedding) = 768;
+CREATE INDEX IF NOT EXISTS user_match_profiles_bm25_search_idx ON user_match_profiles USING bm25 (profile_text)
+  WITH (text_config = 'simple');
 CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_model_idx ON job_posting_match_profiles(embedding_model);
 CREATE INDEX IF NOT EXISTS job_posting_match_profiles_embedding_ivfflat_idx
   ON job_posting_match_profiles USING ivfflat ((embedding::vector(768)) vector_cosine_ops) WITH (lists = 100)
