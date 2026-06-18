@@ -320,6 +320,10 @@ docker compose down -v
 docker compose up --build
 ```
 
+PostgreSQL 18 uses a versioned Docker data directory layout. If you are upgrading
+an existing local PostgreSQL 17 volume, dump and restore the database or reset the
+local volume with the commands above.
+
 This deletes local Roos data.
 
 ### Browser warns about HTTPS

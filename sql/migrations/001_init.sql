@@ -382,6 +382,10 @@ CREATE INDEX IF NOT EXISTS jobs_job_posting_created_at_id_idx
 CREATE INDEX IF NOT EXISTS jobs_user_posting_active_idx
   ON jobs(user_id, job_posting_id)
   WHERE status <> 'failed';
+CREATE INDEX IF NOT EXISTS jobs_user_posting_active_application_latest_idx
+  ON jobs(user_id, job_posting_id, created_at DESC, id DESC)
+  WHERE analysis_kind = 'application'
+    AND status <> 'failed';
 CREATE INDEX IF NOT EXISTS jobs_job_title_trgm_idx ON jobs USING gin (job_title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS jobs_job_description_trgm_idx ON jobs USING gin (job_description gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS jobs_llm_recommendation_trgm_idx ON jobs USING gin (llm_recommendation gin_trgm_ops);

@@ -39,11 +39,11 @@ LEFT JOIN LATERAL (
     ORDER BY j.created_at DESC, j.id DESC
   ) AS profile_text
   FROM (
-    SELECT *
-    FROM jobs
-    WHERE user_id = u.id
-      AND analysis_kind = 'application'
-    ORDER BY created_at DESC, id DESC
+    SELECT j_recent.*
+    FROM jobs j_recent
+    WHERE j_recent.user_id = u.id
+      AND j_recent.analysis_kind = 'application'
+    ORDER BY j_recent.created_at DESC, j_recent.id DESC
     LIMIT 20
   ) j
   LEFT JOIN job_postings jp ON jp.id = j.job_posting_id
