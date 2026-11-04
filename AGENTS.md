@@ -80,12 +80,8 @@ The containerized commands should be preferred when validating changes for hando
 ## Testing Expectations
 
 - Unit tests use Vitest and live under `tests/unit/`.
-- E2E tests use Playwright and live under `tests/e2e/`.
 - Coverage uses V8 through `@vitest/coverage-v8`.
 - Keep coverage thresholds meaningful. Do not lower thresholds to hide untested behavior.
-- Mock PostgreSQL for unit tests; use Docker Compose for full app/E2E validation.
-- Add E2E coverage for user-visible auth, profile, resume upload/versioning, admin, health, and application flows.
-- Docker E2E should target the HTTPS Nginx proxy alias `roos-web`, not an individual app instance.
 
 ## UI Notes
 
