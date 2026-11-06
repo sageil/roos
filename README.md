@@ -213,6 +213,43 @@ Most setup is controlled by `.env`.
 | `EMBEDDING_MODEL` | Model used to compare resumes, roles, and evidence. |
 | `EMBEDDING_DIMENSIONS` | Vector size for the embedding model. The default is `768`. |
 | `SMTP_*` | Optional email settings for meeting invites. |
+| `IP_ALLOWLIST` | Optional comma-separated IPv4/IPv6 addresses or CIDR ranges. When set, only these clients are admitted. |
+| `IP_DENYLIST` | Optional comma-separated IPv4/IPv6 addresses or CIDR ranges. Matching clients get `403`. |
+| `TRUSTED_PROXIES` | Comma-separated proxy addresses or CIDRs whose `X-Forwarded-For` header is trusted. |
+
+### IP Filtering
+
+IP filtering is off unless `IP_ALLOWLIST` or `IP_DENYLIST` is set. Blank values disable it.
+
+- **Precedence:** the denylist is checked first and always wins. An empty allowlist admits every client that is not denied. A non-empty allowlist admits only listed clients.
+- **Denied requests:** a blocked client gets `403` with `{"error":"Forbidden."}`. The client address is not echoed back or logged.
+- **Health probes:** `/api/health` and `/api/instance-health` are never filtered.
+- **Client address:** the server reads `X-Forwarded-For` only when the socket peer is in `TRUSTED_PROXIES`. Otherwise the socket address is used.
+- **Fail closed:** if a client address cannot be determined while rules exist, the request is denied.
+
+Behind the bundled Docker Nginx, the socket peer is the Nginx container, so `TRUSTED_PROXIES` must cover the Compose network. Without it, every request is judged by the Nginx address. Find the subnet with:
+
+```bash
+docker network inspect roos_default --format '{{(index .IPAM.Config 0).Subnet}}'
+```
+
+Examples:
+
+```bash
+# Admit only the office range and one VPN host
+IP_ALLOWLIST=203.0.113.0/24,198.51.100.7
+IP_DENYLIST=
+
+# Block one client, admit everyone else
+IP_ALLOWLIST=
+IP_DENYLIST=192.0.2.44
+
+# IPv6 range, with the Compose network trusted as a proxy
+IP_ALLOWLIST=2001:db8::/32
+TRUSTED_PROXIES=172.20.0.0/16
+```
+
+Security caveat: filtering is only as trustworthy as the proxy chain. Only list proxies you control in `TRUSTED_PROXIES`. Trusting a range that contains clients lets them forge `X-Forwarded-For` and bypass the rules.
 
 ### Gmail Meeting Invites
 

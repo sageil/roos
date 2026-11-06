@@ -10,6 +10,7 @@ import { matchApplicationsBySemanticQuery } from "./applicationSearch.js";
 import { getEffectiveAppSettings, getPublicAppSettings, updateAppSettings } from "./appSettingsStore.js";
 import { assessmentPdfFileName, buildAssessmentPdf } from "./assessmentPdf.js";
 import { config } from "./config.js";
+import { createIpFilter } from "./ipFilter.js";
 import { sendMeetingInvite } from "./emailService.js";
 import { matchJobPostingsBySemanticQuery, refreshJobPostingMatchProfile } from "./jobPostingMatchProfiles.js";
 import { createJobPosting, getActiveJobPosting, listJobPostings } from "./jobPostingStore.js";
@@ -301,6 +302,16 @@ const visibleAnalyzeResponse = (result: AnalyzeResponse, role: UserRecord["role"
         analysis: withoutInterviewQuestions(result.analysis)
       };
 
+// IP filtering runs before CORS and body parsing so blocked clients get no work done.
+// Health probes stay reachable: Docker's healthcheck and peer instance probes use them.
+app.use(
+  createIpFilter({
+    allowlist: config.ipAllowlist,
+    denylist: config.ipDenylist,
+    trustedProxies: config.trustedProxies,
+    exemptPaths: ["/api/health", "/api/instance-health"]
+  })
+);
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 

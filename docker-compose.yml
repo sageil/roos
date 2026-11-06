@@ -24,6 +24,13 @@ x-app-environment: &app-environment
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-nomic-embed-text-v1.5-embedding}
   EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
   APP_INSTANCE_URLS: ${APP_INSTANCE_URLS:-app-1=http://app-1:8787/api/instance-health,app-2=http://app-2:8787/api/instance-health}
+  # IP filtering. Leave IP_ALLOWLIST and IP_DENYLIST blank to disable filtering.
+  # TRUSTED_PROXIES must cover the Nginx container's address on the Compose network
+  # (for example the roos_default subnet). Blank means no proxy is trusted, so every
+  # request is judged by the Nginx address. See .env.example.
+  IP_ALLOWLIST: ${IP_ALLOWLIST:-}
+  IP_DENYLIST: ${IP_DENYLIST:-}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
 
 x-app-common: &app-common
   build:
@@ -126,8 +133,10 @@ services:
             proxy_pass http://roos_app;
             proxy_http_version 1.1;
             proxy_set_header Host $$host;
+            # Overwrite, never append: client-supplied forwarding headers are dropped.
+            # Nginx is the only hop in front of the app, so $$remote_addr is the real client.
             proxy_set_header X-Real-IP $$remote_addr;
-            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-For $$remote_addr;
             proxy_set_header X-Forwarded-Proto $$scheme;
             proxy_set_header Upgrade $$http_upgrade;
             proxy_set_header Connection $$connection_upgrade;
